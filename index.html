@@ -145,10 +145,15 @@
 
   ::placeholder{color:#9AAAB8;}
 
+  #sidebar-backdrop{display:none;}
+
   @media (max-width:900px){
-    .sidebar{position:fixed;left:-230px;top:0;bottom:0;z-index:90;transition:left .2s ease;}
+    .sidebar{position:fixed;left:-230px;top:0;bottom:0;z-index:95;transition:left .2s ease;}
     .sidebar.open{left:0;}
     .menu-toggle{display:inline-flex !important;}
+    body.sidebar-open #sidebar-backdrop{
+      display:block;position:fixed;inset:0;background:rgba(11,42,69,0.45);z-index:90;
+    }
   }
   .menu-toggle{display:none;background:transparent;border:none;cursor:pointer;padding:6px;}
 
@@ -566,17 +571,36 @@ let state = loadState();
    GitHub Pages (o donde tú decidas) y le pide/manda datos a esa URL. */
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnXHFbXfeP6d0t_JZyXMgLWqRJAkVZMmp3Hy-PTIBcYORU1hHe4iVINZj3BKwus8zW/exec';
 
+function setSyncIndicator(status){
+  const el = document.getElementById('sync-indicator');
+  if(!el) return;
+  const map = {
+    saving: {icon:'🔄', text:'Guardando…', color:'#8FB4CC'},
+    saved: {icon:'☁️', text:'Guardado', color:'#4ADE9A'},
+    error: {icon:'⚠️', text:'Sin conexión, guardado local', color:'#F4A261'},
+    loading: {icon:'🔄', text:'Cargando…', color:'#8FB4CC'},
+  };
+  const s = map[status];
+  if(!s) return;
+  el.style.color = s.color;
+  el.innerHTML = `<span>${s.icon}</span><span>${s.text}</span>`;
+}
+
 let __syncTimer = null;
 function persist(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PEGA_AQUI') !== -1) return;
+  setSyncIndicator('saving');
   clearTimeout(__syncTimer);
   __syncTimer = setTimeout(()=>{
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
       body: JSON.stringify(state)
+    }).then(()=>{
+      setSyncIndicator('saved');
     }).catch(()=>{
+      setSyncIndicator('error');
       showToast('No se pudo guardar en Google Sheets, se guardó localmente');
     });
   }, 400);
@@ -584,20 +608,23 @@ function persist(){
 
 async function syncFromGoogleSheets(){
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PEGA_AQUI') !== -1) return;
+  setSyncIndicator('loading');
   try{
     const res = await fetch(APPS_SCRIPT_URL);
     const text = await res.text();
     if(text && text !== '{}'){
       state = JSON.parse(text);
       render();
+      setSyncIndicator('saved');
     } else {
       fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: JSON.stringify(state)
-      }).catch(()=>{});
+      }).then(()=>setSyncIndicator('saved')).catch(()=>setSyncIndicator('error'));
     }
   }catch(e){
+    setSyncIndicator('error');
     showToast('Sin conexión con Google Sheets, usando datos locales');
   }
 }
@@ -791,6 +818,7 @@ function Sidebar(){
     {id:'clientes', label:'Clientes'},
   ];
   return `
+  <div id="sidebar-backdrop"></div>
   <div class="sidebar" id="sidebar">
     <div class="brand" style="justify-content:center;padding-bottom:14px;">
       <img src="${MEDSUM_LOGO_SRC}" style="width:118px;height:118px;object-fit:contain;"/>
@@ -801,7 +829,10 @@ function Sidebar(){
         ${ICONS[it.id]} <span>${it.label}</span>
       </div>
     `).join('')}
-    <div class="sidebar-footer">MEDSUM Tienda Médica · Tampico</div>
+    <div class="sidebar-footer">
+      MEDSUM Tienda Médica · Tampico
+      <div id="sync-indicator" style="margin-top:6px;display:flex;align-items:center;gap:5px;font-size:10.5px;"></div>
+    </div>
   </div>`;
 }
 
@@ -2972,13 +3003,26 @@ function renderClientDetailOverlay(){
 function attachHandlers(){
   // Navegación
   document.querySelectorAll('[data-nav]').forEach(el=>{
-    el.addEventListener('click', ()=>{ setView(el.getAttribute('data-nav')); });
+    el.addEventListener('click', ()=>{
+      setView(el.getAttribute('data-nav'));
+      const sb = document.getElementById('sidebar');
+      if(sb) sb.classList.remove('open');
+      document.body.classList.remove('sidebar-open');
+    });
   });
 
   const menuToggle = document.getElementById('menu-toggle');
   if(menuToggle){
     menuToggle.addEventListener('click', ()=>{
       document.getElementById('sidebar').classList.toggle('open');
+      document.body.classList.toggle('sidebar-open');
+    });
+  }
+  const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+  if(sidebarBackdrop){
+    sidebarBackdrop.addEventListener('click', ()=>{
+      document.getElementById('sidebar').classList.remove('open');
+      document.body.classList.remove('sidebar-open');
     });
   }
 
