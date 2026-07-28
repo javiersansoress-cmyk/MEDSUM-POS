@@ -569,7 +569,7 @@ let state = loadState();
    como Aplicación web (termina en /exec). Apps Script aquí SOLO responde
    datos (Google Sheets), nunca sirve esta página — este archivo vive en
    GitHub Pages (o donde tú decidas) y le pide/manda datos a esa URL. */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnXHFbXfeP6d0t_JZyXMgLWqRJAkVZMmp3Hy-PTIBcYORU1hHe4iVINZj3BKwus8zW/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz9zE1zrQuF0NJ6xyP1lljUKU0yX7-RTpecsHbvLscIkKo1w--n-7qThptpdaIThhfH/exec';
 
 function setSyncIndicator(status){
   const el = document.getElementById('sync-indicator');
@@ -595,6 +595,7 @@ function persist(){
   __syncTimer = setTimeout(()=>{
     fetch(APPS_SCRIPT_URL, {
       method: 'POST',
+      mode: 'no-cors',
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
       body: JSON.stringify(state)
     }).then(()=>{
@@ -619,6 +620,7 @@ async function syncFromGoogleSheets(){
     } else {
       fetch(APPS_SCRIPT_URL, {
         method: 'POST',
+        mode: 'no-cors',
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: JSON.stringify(state)
       }).then(()=>setSyncIndicator('saved')).catch(()=>setSyncIndicator('error'));
