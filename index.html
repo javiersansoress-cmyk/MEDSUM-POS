@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -30,13 +31,16 @@
 
   .app{display:flex;min-height:100vh;}
 
-  /* Sidebar */
+  /* Sidebar: capa fija e independiente, siempre del tamaño exacto de la pantalla */
   .sidebar{
     width:230px;flex-shrink:0;background:var(--navy);
     background-image:linear-gradient(180deg,var(--navy) 0%, var(--navy-2) 100%);
     color:#fff;display:flex;flex-direction:column;padding:20px 14px;
     border-radius:0 28px 28px 0;
+    position:fixed;top:0;left:0;bottom:0;height:100vh;
+    overflow-y:auto;overflow-x:visible;z-index:50;
   }
+  
   .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 22px 8px;}
   .brand-mark{
     width:34px;height:34px;border-radius:10px;
@@ -59,8 +63,8 @@
   .nav-item.active{background:rgba(255,255,255,0.14);color:#fff;font-weight:700;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);}
   .sidebar-footer{margin-top:auto;padding:10px 10px 2px;font-size:10.5px;color:#5D7E96;}
 
-  /* Main */
-  .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+  /* Main: se desplaza a la derecha del ancho fijo del sidebar */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;margin-left:230px;}
   .topbar{
     background:rgba(242,242,247,0.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border-bottom:1px solid rgba(0,0,0,0.06);
@@ -148,8 +152,9 @@
   #sidebar-backdrop{display:none;}
 
   @media (max-width:900px){
-    .sidebar{position:fixed;left:-230px;top:0;bottom:0;z-index:95;transition:left .2s ease;}
+    .sidebar{left:-230px;z-index:95;transition:left .2s ease;}
     .sidebar.open{left:0;}
+    .main{margin-left:0;}
     .menu-toggle{display:inline-flex !important;}
     body.sidebar-open #sidebar-backdrop{
       display:block;position:fixed;inset:0;background:rgba(11,42,69,0.45);z-index:90;
