@@ -641,7 +641,11 @@ function money(n){
 }
 
 function todayISO(){
-  return new Date().toISOString().slice(0,10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
 }
 
 /* ========= FIDELIDAD DE CLIENTES ========= */
@@ -707,6 +711,7 @@ let categoryModalOpen = false;
 let productPrefillName = '';
 let productImageData = null;
 let editingProductId = null;
+let confirmDeleteProductId = null;
 let productEditPrefill = {};
 let productCatalog = true;
 let cashCalcOpen = false;
@@ -743,6 +748,7 @@ function render(){
     ${quoteModalOpen ? QuoteModal() : ''}
     ${expenseModalOpen ? ExpenseModal() : ''}
     ${productModalOpen ? ProductModal() : ''}
+    ${confirmDeleteProductId ? ConfirmDeleteProductSheet() : ''}
     ${categoryModalOpen ? CategoryModal() : ''}
     ${cashCalcOpen ? CashCalcModal(computeCartFinalTotal()) : ''}
     ${saleSuccessOpen ? SaleSuccessPanel() : ''}
@@ -1354,6 +1360,197 @@ function sendTicketWhatsApp(saleId){
   window.open(url, '_blank');
 }
 
+const MEDSUM_CONTACT = {
+  address1: 'Av. Rosalío Bustamante 190, Local 4',
+  address2: 'Tampico, Tamaulipas',
+  phone: '833 251 5105',
+  instagram: '@medsum.tampico'
+};
+
+function formalDocStyles(){
+  return `
+    * { box-sizing:border-box; }
+    body{ font-family: Arial, Helvetica, sans-serif; color:#16263A; margin:0; padding:0; background:#EDEFF2; }
+    .page{ max-width:720px; margin:24px auto; background:#fff; padding:40px 46px 0; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+    .letterhead{ text-align:center; padding-bottom:14px; }
+    .letterhead img{ width:64px; height:64px; object-fit:contain; margin-bottom:6px; }
+    .letterhead .word{ font-size:26px; font-weight:800; letter-spacing:4px; color:#0B2A45; }
+    .letterhead .subword{ font-size:10.5px; letter-spacing:2px; color:#5D7E96; font-weight:600; margin-top:2px; }
+    .letterhead .tag{ font-size:11px; letter-spacing:2px; color:#049184; font-weight:800; margin-top:6px; }
+    .dashed{ border:none; border-top:2px dashed #C7D2D9; margin:16px 0; }
+    .info-row{ display:flex; justify-content:space-between; gap:20px; padding-bottom:4px; font-size:13px; }
+    .info-row .contact-block div{ display:flex; align-items:center; gap:8px; margin-bottom:8px; color:#16263A; }
+    .info-row .contact-block .ico{ color:#049184; font-weight:700; }
+    .meta-block{ text-align:right; }
+    .meta-block .row{ display:flex; justify-content:flex-end; gap:14px; margin-bottom:6px; font-weight:800; color:#0B2A45; font-size:13px; letter-spacing:0.3px; }
+    .meta-block .row .val{ font-weight:600; color:#16263A; min-width:120px; text-align:right; }
+    table.items{ width:100%; border-collapse:collapse; margin-top:6px; }
+    table.items thead{ display:table-header-group; }
+    table.items thead tr{ background:#0B2A45; color:#fff; }
+    table.items th{ padding:10px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
+    table.items th.num, table.items td.num{ text-align:right; }
+    table.items td{ padding:9px 10px; border-bottom:1px solid #E3E9ED; font-size:12.5px; }
+    table.items tr{ page-break-inside:avoid; }
+    .totals{ display:flex; justify-content:flex-end; margin-top:16px; page-break-inside:avoid; }
+    .totals table{ border-collapse:collapse; min-width:230px; }
+    .totals td{ padding:6px 4px; font-size:13px; }
+    .totals td.label{ color:#5D7E96; text-align:right; padding-right:14px; }
+    .totals td.val{ text-align:right; font-weight:700; border:1.5px solid #B9D9D4; border-radius:8px; padding:6px 12px; min-width:90px; }
+    .totals tr.grand td{ font-size:16px; padding-top:10px; }
+    .totals tr.grand td.label{ color:#049184; font-weight:800; }
+    .totals tr.grand td.val{ color:#049184; border-color:#049184; font-size:17px; }
+    .notes{ margin-top:30px; padding:14px 16px; background:#F4F7F9; border-radius:10px; font-size:11px; color:#5D7E96; line-height:1.6; page-break-inside:avoid; }
+    .thankyou{ text-align:center; margin-top:26px; }
+    .thankyou .big{ font-size:19px; font-weight:800; color:#0B2A45; }
+    .thankyou .big span{ color:#049184; }
+    .thankyou .pill{ display:inline-block; margin-top:10px; background:#049184; color:#fff; font-size:11.5px; font-weight:800; letter-spacing:1px; padding:8px 20px; border-radius:20px; }
+    .footer-band{ margin:26px -46px 0; background:#0B2A45; color:#fff; text-align:center; padding:14px; font-size:10.5px; letter-spacing:2px; font-weight:700; page-break-inside:avoid; }
+    .footer-band span{ color:#3DD9C4; }
+    .print-btn-wrap{ text-align:center; padding:20px; }
+    .print-btn{ background:#0B2A45; color:#fff; border:none; border-radius:8px; padding:12px 22px; font-size:14px; font-weight:700; cursor:pointer; }
+    @media print{
+      body{ background:#fff; }
+      .page{ box-shadow:none; margin:0; max-width:100%; }
+      .print-btn-wrap{ display:none; }
+      table.items thead{ display:table-header-group; }
+      .footer-band{ margin-left:-46px; margin-right:-46px; }
+    }
+  `;
+}
+
+function formalLetterhead(logoImgTag){
+  return `
+    <div class="letterhead">
+      ${logoImgTag}
+      <div class="word">MEDSUM</div>
+      <div class="subword">FARMACIA · TIENDA MÉDICA · MINISÚPER</div>
+      <div class="tag">SALUD QUE TRANSFORMA</div>
+    </div>
+    <hr class="dashed"/>`;
+}
+
+function formalInfoRow(metaRows){
+  return `
+    <div class="info-row">
+      <div class="contact-block">
+        <div><span class="ico">📍</span> ${MEDSUM_CONTACT.address1}, ${MEDSUM_CONTACT.address2}</div>
+        <div><span class="ico">📞</span> ${MEDSUM_CONTACT.phone}</div>
+        <div><span class="ico">📷</span> ${MEDSUM_CONTACT.instagram}</div>
+      </div>
+      <div class="meta-block">
+        ${metaRows.map(r=>`<div class="row"><span>${r[0]}:</span><span class="val">${r[1]}</span></div>`).join('')}
+      </div>
+    </div>
+    <hr class="dashed"/>`;
+}
+
+function openFormalDocument(html){
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+
+function ivaBreakdown(finalAmount){
+  const base = Math.round((finalAmount / 1.16) * 100) / 100;
+  const iva = Math.round((finalAmount - base) * 100) / 100;
+  return {base, iva};
+}
+
+function buildFormalQuoteHTML(q){
+  const logoTag = MEDSUM_LOGO_SRC ? `<img src="${MEDSUM_LOGO_SRC}"/>` : '';
+  const rows = q.items.map(it=>`
+    <tr>
+      <td>${it.qty}</td>
+      <td>${it.name}</td>
+      <td class="num">${money(it.price)}</td>
+      <td class="num">${money(it.price*it.qty)}</td>
+    </tr>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Cotización ${q.id}</title><style>${formalDocStyles()}</style></head>
+  <body>
+    <div class="page">
+      ${formalLetterhead(logoTag)}
+      ${formalInfoRow([
+        ['FOLIO', q.id.slice(-6).toUpperCase()],
+        ['FECHA', formatDateDMY(todayISO())],
+        ['VÁLIDA HASTA', formatLoyDate(q.expiresAt)],
+        ['CLIENTE', q.clientName]
+      ])}
+      <table class="items">
+        <thead><tr><th style="width:60px;">Cant.</th><th>Descripción</th><th class="num">Precio unit.</th><th class="num">Importe</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="totals">
+        <table>
+          <tr><td class="label">SUBTOTAL:</td><td class="val">${money(ivaBreakdown(q.total).base)}</td></tr>
+          <tr><td class="label">IVA (16%):</td><td class="val">${money(ivaBreakdown(q.total).iva)}</td></tr>
+          <tr class="grand"><td class="label">TOTAL:</td><td class="val">${money(q.total)}</td></tr>
+        </table>
+      </div>
+      <div class="notes">
+        Esta cotización (<b>${q.concept}</b>) tiene una validez de 7 días a partir de su fecha de emisión. Precios sujetos a cambio sin previo aviso una vez vencida, y productos sujetos a disponibilidad de inventario al confirmar el pedido.
+      </div>
+      <div class="thankyou">
+        <div class="big">¡GRACIAS POR SU <span>PREFERENCIA!</span></div>
+        <div class="pill">QUEDAMOS AL PENDIENTE ♥</div>
+      </div>
+      <div class="footer-band">• • • &nbsp; SALUD QUE TRANSFORMA &nbsp; • • •</div>
+      <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
+    </div>
+  </body></html>`;
+}
+
+function buildFormalReceiptHTML(sale){
+  const logoTag = MEDSUM_LOGO_SRC ? `<img src="${MEDSUM_LOGO_SRC}"/>` : '';
+  const subtotal = sale.items.reduce((s,it)=>s+it.price*it.qty,0);
+  const discount = Math.max(0, subtotal - sale.total);
+  const rows = sale.items.map(it=>`
+    <tr>
+      <td>${it.qty}</td>
+      <td>${it.name}</td>
+      <td class="num">${money(it.price)}</td>
+      <td class="num">${money(it.price*it.qty)}</td>
+    </tr>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Recibo ${sale.folio||sale.id}</title><style>${formalDocStyles()}</style></head>
+  <body>
+    <div class="page">
+      ${formalLetterhead(logoTag)}
+      ${formalInfoRow([
+        ['FOLIO', sale.folio || sale.id.slice(-6).toUpperCase()],
+        ['FECHA', formatDateDMY(sale.date)],
+        ['HORA', formatHora(sale.timestamp)],
+        ['CLIENTE', sale.clientName || 'Público en general']
+      ])}
+      <table class="items">
+        <thead><tr><th style="width:60px;">Cant.</th><th>Descripción</th><th class="num">Precio unit.</th><th class="num">Importe</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="totals">
+        <table>
+          ${discount>0 ? `<tr><td class="label">Suma de productos:</td><td class="val">${money(subtotal)}</td></tr>
+          <tr><td class="label">DESCUENTO:</td><td class="val">-${money(discount)}</td></tr>` : ''}
+          <tr><td class="label">SUBTOTAL:</td><td class="val">${money(ivaBreakdown(sale.total).base)}</td></tr>
+          <tr><td class="label">IVA (16%):</td><td class="val">${money(ivaBreakdown(sale.total).iva)}</td></tr>
+          <tr class="grand"><td class="label">TOTAL:</td><td class="val">${money(sale.total)}</td></tr>
+        </table>
+      </div>
+      <div class="notes">
+        Este documento es un comprobante de compra (${sale.paymentMethod||'-'} · ${sale.paymentType||'Pagada'}). Para cambios y devoluciones, presenta este recibo dentro de los siguientes 5 días hábiles junto con el producto en su empaque original.
+      </div>
+      <div class="thankyou">
+        <div class="big">¡GRACIAS POR SU <span>COMPRA!</span></div>
+        <div class="pill">VUELVA PRONTO ♥</div>
+      </div>
+      <div class="footer-band">• • • &nbsp; SALUD QUE TRANSFORMA &nbsp; • • •</div>
+      <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
+    </div>
+  </body></html>`;
+}
+
 function buildReceiptText(sale){
   if(!sale) return '';
   const lines = [];
@@ -1427,6 +1624,7 @@ function SaleSuccessPanel(){
         <button class="sale-receipt-link" data-print-receipt="${sale.id}">🖨️ Imprimir comprobante</button>
         <button class="sale-receipt-link" data-download-receipt="${sale.id}">⬇ Descarga el comprobante</button>
         <button class="sale-receipt-link" data-download-ticket="${sale.id}">🎫 Descargar ticket (imagen)</button>
+        <button class="sale-receipt-link" data-formal-receipt="${sale.id}">📄 Recibo formal (PDF)</button>
       </div>
       ${sale.clientPhone ? `
       <button class="loy-btn loy-btn-wa" style="width:100%;justify-content:center;margin-top:14px;padding:12px;" data-send-ticket-wa="${sale.id}">📲 Enviar ticket por WhatsApp</button>
@@ -1829,9 +2027,27 @@ function ProductModal(){
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" data-close-modal="product">Cancelar</button>
-        <button class="btn btn-primary" data-save-product="1">${isEditing?'Guardar cambios':'Crear producto'}</button>
+      <div class="modal-footer" style="justify-content:${isEditing?'space-between':'flex-end'};">
+        ${isEditing ? `<span data-delete-product="${editingProductId}" style="color:var(--danger);font-weight:700;font-size:13px;cursor:pointer;">🗑 Eliminar producto</span>` : '<span></span>'}
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-outline" data-close-modal="product">Cancelar</button>
+          <button class="btn btn-primary" data-save-product="1">${isEditing?'Guardar cambios':'Crear producto'}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function ConfirmDeleteProductSheet(){
+  const p = state.products.find(x=>x.id===confirmDeleteProductId);
+  if(!p) return '';
+  return `<div class="loy-sheet-overlay" data-cancel-delete-product="1">
+    <div class="loy-sheet" onclick="event.stopPropagation()">
+      <h4>¿Eliminar "${p.name}"?</h4>
+      <p>Esta acción es permanente y quitará el producto de tu inventario. No se borrarán las ventas ya registradas con él.</p>
+      <div class="btns">
+        <button class="btn btn-outline" data-cancel-delete-product="1">Cancelar</button>
+        <button class="btn btn-danger" data-confirm-delete-product="${p.id}">Eliminar</button>
       </div>
     </div>
   </div>`;
@@ -1894,7 +2110,10 @@ function shiftBalanceDate(dir){
   const d = new Date(balanceRefDate+'T00:00:00');
   const deltas = {Diario:1, Semanal:7, Quincenal:15, Mensual:30};
   d.setDate(d.getDate() + dir*(deltas[balancePeriod]||1));
-  balanceRefDate = d.toISOString().slice(0,10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  balanceRefDate = `${y}-${m}-${day}`;
 }
 
 function balanceRangeLabel(){
@@ -1910,6 +2129,135 @@ function balanceRangeLabel(){
     return d.getDate()<=15 ? `01 - 15 ${months[d.getMonth()]}` : `16 - ${new Date(d.getFullYear(),d.getMonth()+1,0).getDate()} ${months[d.getMonth()]}`;
   }
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+let balanceDetailSaleId = null;
+let balanceDetailExpenseId = null;
+let balanceEditSaleMode = false;
+let balanceEditExpenseMode = false;
+
+function BalanceSaleDetailPanel(){
+  const sale = state.sales.find(s=>s.id===balanceDetailSaleId);
+  if(!sale) return '';
+  if(balanceEditSaleMode) return BalanceSaleEditPanel(sale);
+  const subtotal = sale.items.reduce((s,it)=>s+it.price*it.qty,0);
+  const discount = Math.max(0, subtotal - sale.total);
+  return `
+  <div class="sale-success-overlay" data-close-sale-detail="1">
+    <div class="sale-success-panel" style="width:460px;" onclick="event.stopPropagation()">
+      <button class="sale-success-close" data-close-sale-detail="1">✕</button>
+      <h3 style="margin:0 0 20px;font-size:18px;">Detalle de la venta</h3>
+
+      <div style="font-size:24px;font-weight:800;margin-bottom:4px;">${money(sale.total)}</div>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:20px;">Folio ${sale.folio||sale.id} · ${formatDateDMY(sale.date)} ${sale.timestamp?('· '+formatHora(sale.timestamp)):''}</div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;"><span style="font-size:12.5px;color:var(--text-muted);">👤 Cliente</span><span style="font-size:13px;font-weight:600;">${sale.clientName||'Público en general'}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="font-size:12.5px;color:var(--text-muted);">💳 Método de pago</span><span style="font-size:13px;font-weight:600;">${sale.paymentMethod||'-'}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="font-size:12.5px;color:var(--text-muted);">📋 Estado</span><span style="font-size:13px;font-weight:600;">${sale.paymentType||'Pagada'}</span></div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Productos</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px;max-height:200px;overflow-y:auto;">
+        ${sale.items.map(it=>`
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:32px;height:32px;border-radius:7px;overflow:hidden;flex-shrink:0;">${productThumb(state.products.find(p=>p.id===it.productId)||{category:''})}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${it.name}</div>
+              <div style="font-size:11.5px;color:var(--text-muted);">${it.qty} x ${money(it.price)}</div>
+            </div>
+            <div style="font-size:13px;font-weight:700;">${money(it.price*it.qty)}</div>
+          </div>`).join('')}
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:22px;">
+        ${discount>0 ? `<div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-muted);margin-bottom:6px;"><span>Subtotal</span><span>${money(subtotal)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--danger);margin-bottom:6px;"><span>Descuento</span><span>-${money(discount)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;"><span>Total</span><span>${money(sale.total)}</span></div>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;margin-bottom:10px;" data-edit-sale="${sale.id}">✏️ Editar venta</button>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="btn btn-outline" style="flex:1;justify-content:center;padding:10px;font-size:12.5px;" data-reprint-receipt="${sale.id}">🖨️ Comprobante</button>
+        <button class="btn btn-outline" style="flex:1;justify-content:center;padding:10px;font-size:12.5px;" data-reprint-ticket="${sale.id}">🎫 Ticket</button>
+        <button class="btn btn-outline" style="flex:1;justify-content:center;padding:10px;font-size:12.5px;" data-reprint-formal="${sale.id}">📄 Formal</button>
+      </div>
+      <span data-delete-sale="${sale.id}" style="display:block;text-align:center;color:var(--danger);font-weight:700;font-size:13px;cursor:pointer;">🗑 Eliminar venta ›</span>
+    </div>
+  </div>`;
+}
+
+function BalanceSaleEditPanel(sale){
+  return `
+  <div class="sale-success-overlay" data-close-sale-detail="1">
+    <div class="sale-success-panel" style="width:460px;" onclick="event.stopPropagation()">
+      <button class="sale-success-close" data-cancel-edit-sale="1">✕</button>
+      <h3 style="margin:0 0 20px;font-size:18px;">Editar venta</h3>
+
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Productos y cantidades</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px;max-height:260px;overflow-y:auto;">
+        ${sale.items.map((it,idx)=>`
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${it.name}</div>
+            <input type="number" min="1" value="${it.qty}" data-edit-sale-item-qty="${idx}" style="width:56px;text-align:center;"/>
+            <input type="number" min="0" value="${it.price}" data-edit-sale-item-price="${idx}" style="width:80px;text-align:right;"/>
+          </div>`).join('')}
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label>Método de pago</label>
+        <select id="edit-sale-payment-method">
+          ${['Efectivo','Tarjeta','Transferencia','Otro','SPEI'].map(m=>`<option value="${m}" ${sale.paymentMethod===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:20px;">
+        <label>Fecha de la venta</label>
+        <input type="date" id="edit-sale-date" value="${sale.date}"/>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;" data-cancel-edit-sale="1">Cancelar</button>
+        <button class="btn btn-primary" style="flex:1;justify-content:center;padding:12px;" data-save-edit-sale="${sale.id}">Guardar cambios</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function BalanceExpenseDetailPanel(){
+  const exp = state.expenses.find(e=>e.id===balanceDetailExpenseId);
+  if(!exp) return '';
+  if(balanceEditExpenseMode) return BalanceExpenseEditPanel(exp);
+  return `
+  <div class="sale-success-overlay" data-close-expense-detail="1">
+    <div class="sale-success-panel" style="width:420px;" onclick="event.stopPropagation()">
+      <button class="sale-success-close" data-close-expense-detail="1">✕</button>
+      <h3 style="margin:0 0 20px;font-size:18px;">Detalle del gasto</h3>
+      <div style="font-size:24px;font-weight:800;color:var(--danger);margin-bottom:4px;">-${money(exp.amount)}</div>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:20px;">${formatDateDMY(exp.date)}</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:24px;">
+        <span style="font-size:12.5px;color:var(--text-muted);">Concepto</span>
+        <span style="font-size:13px;font-weight:600;text-align:right;max-width:220px;">${exp.concept}</span>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;margin-bottom:10px;" data-edit-expense="${exp.id}">✏️ Editar gasto</button>
+      <span data-delete-expense="${exp.id}" style="display:block;text-align:center;color:var(--danger);font-weight:700;font-size:13px;cursor:pointer;">🗑 Eliminar gasto ›</span>
+    </div>
+  </div>`;
+}
+
+function BalanceExpenseEditPanel(exp){
+  return `
+  <div class="sale-success-overlay" data-close-expense-detail="1">
+    <div class="sale-success-panel" style="width:420px;" onclick="event.stopPropagation()">
+      <button class="sale-success-close" data-cancel-edit-expense="1">✕</button>
+      <h3 style="margin:0 0 20px;font-size:18px;">Editar gasto</h3>
+      <div class="field" style="margin-bottom:14px;"><label>Concepto</label><input id="edit-expense-concept" value="${escapeAttr(exp.concept)}"/></div>
+      <div class="field" style="margin-bottom:14px;"><label>Monto</label><input id="edit-expense-amount" type="number" value="${exp.amount}"/></div>
+      <div class="field" style="margin-bottom:20px;"><label>Fecha</label><input type="date" id="edit-expense-date" value="${exp.date}"/></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;" data-cancel-edit-expense="1">Cancelar</button>
+        <button class="btn btn-primary" style="flex:1;justify-content:center;padding:12px;" data-save-edit-expense="${exp.id}">Guardar cambios</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderBalance(){
@@ -1933,13 +2281,13 @@ function renderBalance(){
     tabContent = `<div class="empty-state">${ICONS.balance}<b>No hay cierres de caja registrados</b></div>`;
   } else if(balanceTab==='ingresos'){
     tabContent = salesToday.length ? `
-      <table><thead><tr><th>Hora</th><th>Artículos</th><th>Total</th></tr></thead>
-      <tbody>${salesToday.map(s=>`<tr><td>${s.date}</td><td>${s.items.map(i=>i.name+' x'+i.qty).join(', ')}</td><td>${money(s.total)}</td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Hora</th><th>Artículos</th><th>Total</th><th></th></tr></thead>
+      <tbody>${salesToday.map(s=>`<tr><td>${s.date}</td><td>${s.items.map(i=>i.name+' x'+i.qty).join(', ')}</td><td>${money(s.total)}</td><td><span data-view-sale="${s.id}" style="color:var(--turquoise-dark);font-weight:700;cursor:pointer;font-size:12.5px;white-space:nowrap;">👁 Ver ›</span></td></tr>`).join('')}</tbody></table>
     ` : EmptyBalanceState();
   } else if(balanceTab==='egresos'){
     tabContent = expensesToday.length ? `
-      <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th></tr></thead>
-      <tbody>${expensesToday.map(e=>`<tr><td>${e.date}</td><td>${e.concept}</td><td style="color:var(--danger);">-${money(e.amount)}</td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th></th></tr></thead>
+      <tbody>${expensesToday.map(e=>`<tr><td>${e.date}</td><td>${e.concept}</td><td style="color:var(--danger);">-${money(e.amount)}</td><td><span data-view-expense="${e.id}" style="color:var(--turquoise-dark);font-weight:700;cursor:pointer;font-size:12.5px;white-space:nowrap;">👁 Ver ›</span></td></tr>`).join('')}</tbody></table>
     ` : EmptyBalanceState();
   } else {
     tabContent = EmptyBalanceState();
@@ -1983,7 +2331,9 @@ function renderBalance(){
       ${tabs.map(t=>`<div data-balance-tab="${t.id}" style="padding:14px 20px;cursor:pointer;font-size:13.5px;font-weight:600;color:${balanceTab===t.id?'var(--text)':'var(--text-muted)'};border-bottom:2px solid ${balanceTab===t.id?'var(--navy)':'transparent'};">${t.label}</div>`).join('')}
     </div>` : ''}
     <div style="padding:6px 0;">${tabContent}</div>
-  </div>`;
+  </div>
+  ${balanceDetailSaleId ? BalanceSaleDetailPanel() : ''}
+  ${balanceDetailExpenseId ? BalanceExpenseDetailPanel() : ''}`;
 }
 
 function EmptyBalanceState(){
@@ -2267,6 +2617,7 @@ function QuoteDetailPanel(){
 
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;margin-bottom:10px;" data-register-quote-sale="${q.id}">📷 Registrar venta</button>
       <button class="btn btn-outline" style="width:100%;justify-content:center;padding:12px;margin-bottom:10px;" data-edit-quote="${q.id}">✏️ Editar</button>
+      <button class="btn btn-outline" style="width:100%;justify-content:center;padding:12px;margin-bottom:10px;" data-formal-quote="${q.id}">📄 Cotización formal (PDF)</button>
       <div style="display:flex;gap:10px;margin-bottom:14px;">
         <button class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;" data-download-quote="${q.id}">⬇ Descargar</button>
         <button class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;" data-print-quote="${q.id}">🖨️ Imprimir</button>
@@ -3230,6 +3581,13 @@ function attachHandlers(){
   if(sendTicketWaEl){ sendTicketWaEl.addEventListener('click', ()=>{ shareTicketImageWhatsApp(sendTicketWaEl.getAttribute('data-send-ticket-wa')); }); }
   const downloadTicketEl = document.querySelector('[data-download-ticket]');
   if(downloadTicketEl){ downloadTicketEl.addEventListener('click', ()=>{ downloadTicketImage(downloadTicketEl.getAttribute('data-download-ticket')); }); }
+  const formalReceiptEl = document.querySelector('[data-formal-receipt]');
+  if(formalReceiptEl){
+    formalReceiptEl.addEventListener('click', ()=>{
+      const sale = state.sales.find(s=>s.id===formalReceiptEl.getAttribute('data-formal-receipt'));
+      if(sale) openFormalDocument(buildFormalReceiptHTML(sale));
+    });
+  }
 
   // ----- INVENTARIO -----
   const invSearchEl = document.getElementById('inv-search');
@@ -3309,6 +3667,102 @@ function attachHandlers(){
   }
   const openExpenseBtn = document.querySelector('[data-open-expense]');
   if(openExpenseBtn){ openExpenseBtn.addEventListener('click', ()=>{ expenseModalOpen = true; render(); }); }
+
+  // ----- BALANCE: detalle/edición de movimientos -----
+  document.querySelectorAll('[data-view-sale]').forEach(el=>{
+    el.addEventListener('click', ()=>{ balanceDetailSaleId = el.getAttribute('data-view-sale'); balanceEditSaleMode=false; render(); });
+  });
+  document.querySelectorAll('[data-view-expense]').forEach(el=>{
+    el.addEventListener('click', ()=>{ balanceDetailExpenseId = el.getAttribute('data-view-expense'); balanceEditExpenseMode=false; render(); });
+  });
+  document.querySelectorAll('[data-close-sale-detail]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ if(e.target!==el) return; balanceDetailSaleId=null; balanceEditSaleMode=false; render(); });
+  });
+  document.querySelectorAll('[data-close-expense-detail]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ if(e.target!==el) return; balanceDetailExpenseId=null; balanceEditExpenseMode=false; render(); });
+  });
+  const editSaleBtn = document.querySelector('[data-edit-sale]');
+  if(editSaleBtn){ editSaleBtn.addEventListener('click', ()=>{ balanceEditSaleMode = true; render(); }); }
+  document.querySelectorAll('[data-cancel-edit-sale]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ if(e.target!==el) return; balanceEditSaleMode = false; render(); });
+  });
+  const saveEditSaleBtn = document.querySelector('[data-save-edit-sale]');
+  if(saveEditSaleBtn){
+    saveEditSaleBtn.addEventListener('click', ()=>{
+      const id = saveEditSaleBtn.getAttribute('data-save-edit-sale');
+      const sale = state.sales.find(s=>s.id===id);
+      if(!sale) return;
+      document.querySelectorAll('[data-edit-sale-item-qty]').forEach(el=>{
+        const idx = Number(el.getAttribute('data-edit-sale-item-qty'));
+        if(sale.items[idx]) sale.items[idx].qty = Math.max(1, Number(el.value)||1);
+      });
+      document.querySelectorAll('[data-edit-sale-item-price]').forEach(el=>{
+        const idx = Number(el.getAttribute('data-edit-sale-item-price'));
+        if(sale.items[idx]) sale.items[idx].price = Math.max(0, Number(el.value)||0);
+      });
+      sale.total = sale.items.reduce((s,it)=>s+it.price*it.qty,0);
+      sale.paymentMethod = document.getElementById('edit-sale-payment-method').value;
+      sale.date = document.getElementById('edit-sale-date').value || sale.date;
+      balanceEditSaleMode = false;
+      persist(); render();
+      showToast('Venta actualizada');
+    });
+  }
+  const reprintReceiptBtn = document.querySelector('[data-reprint-receipt]');
+  if(reprintReceiptBtn){ reprintReceiptBtn.addEventListener('click', ()=>{ printReceipt(reprintReceiptBtn.getAttribute('data-reprint-receipt')); }); }
+  const reprintTicketBtn = document.querySelector('[data-reprint-ticket]');
+  if(reprintTicketBtn){ reprintTicketBtn.addEventListener('click', ()=>{ downloadTicketImage(reprintTicketBtn.getAttribute('data-reprint-ticket')); }); }
+  const reprintFormalBtn = document.querySelector('[data-reprint-formal]');
+  if(reprintFormalBtn){
+    reprintFormalBtn.addEventListener('click', ()=>{
+      const sale = state.sales.find(s=>s.id===reprintFormalBtn.getAttribute('data-reprint-formal'));
+      if(sale) openFormalDocument(buildFormalReceiptHTML(sale));
+    });
+  }
+  const deleteSaleBtn = document.querySelector('[data-delete-sale]');
+  if(deleteSaleBtn){
+    deleteSaleBtn.addEventListener('click', ()=>{
+      const id = deleteSaleBtn.getAttribute('data-delete-sale');
+      if(confirm('¿Eliminar esta venta del balance? Esta acción es permanente.')){
+        state.sales = state.sales.filter(s=>s.id!==id);
+        balanceDetailSaleId = null;
+        persist(); render();
+        showToast('Venta eliminada');
+      }
+    });
+  }
+  const editExpenseFromBalanceBtn = document.querySelector('[data-edit-expense]');
+  if(editExpenseFromBalanceBtn){ editExpenseFromBalanceBtn.addEventListener('click', ()=>{ balanceEditExpenseMode = true; render(); }); }
+  document.querySelectorAll('[data-cancel-edit-expense]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ if(e.target!==el) return; balanceEditExpenseMode = false; render(); });
+  });
+  const saveEditExpenseBtn = document.querySelector('[data-save-edit-expense]');
+  if(saveEditExpenseBtn){
+    saveEditExpenseBtn.addEventListener('click', ()=>{
+      const id = saveEditExpenseBtn.getAttribute('data-save-edit-expense');
+      const exp = state.expenses.find(e=>e.id===id);
+      if(!exp) return;
+      exp.concept = document.getElementById('edit-expense-concept').value.trim() || exp.concept;
+      exp.amount = Math.max(0, Number(document.getElementById('edit-expense-amount').value)||0);
+      exp.date = document.getElementById('edit-expense-date').value || exp.date;
+      balanceEditExpenseMode = false;
+      persist(); render();
+      showToast('Gasto actualizado');
+    });
+  }
+  const deleteExpenseBtn = document.querySelector('[data-delete-expense]');
+  if(deleteExpenseBtn){
+    deleteExpenseBtn.addEventListener('click', ()=>{
+      const id = deleteExpenseBtn.getAttribute('data-delete-expense');
+      if(confirm('¿Eliminar este gasto? Esta acción es permanente.')){
+        state.expenses = state.expenses.filter(e=>e.id!==id);
+        balanceDetailExpenseId = null;
+        persist(); render();
+        showToast('Gasto eliminado');
+      }
+    });
+  }
+
   const saveExpenseBtn = document.querySelector('[data-save-expense]');
   if(saveExpenseBtn){
     saveExpenseBtn.addEventListener('click', ()=>{
@@ -3504,6 +3958,13 @@ function attachHandlers(){
   if(downloadQuoteEl){ downloadQuoteEl.addEventListener('click', ()=>{ downloadQuoteReceipt(downloadQuoteEl.getAttribute('data-download-quote')); }); }
   const printQuoteEl = document.querySelector('[data-print-quote]');
   if(printQuoteEl){ printQuoteEl.addEventListener('click', ()=>{ printQuoteReceipt(printQuoteEl.getAttribute('data-print-quote')); }); }
+  const formalQuoteEl = document.querySelector('[data-formal-quote]');
+  if(formalQuoteEl){
+    formalQuoteEl.addEventListener('click', ()=>{
+      const q = state.quotes.find(x=>x.id===formalQuoteEl.getAttribute('data-formal-quote'));
+      if(q) openFormalDocument(buildFormalQuoteHTML(q));
+    });
+  }
   const deleteQuoteEl = document.querySelector('[data-confirm-delete-quote]');
   if(deleteQuoteEl){
     deleteQuoteEl.addEventListener('click', ()=>{
@@ -3592,6 +4053,28 @@ function attachHandlers(){
       editingProductId = null;
       productEditPrefill = {};
       persist(); render();
+    });
+  }
+  const deleteProductLinkBtn = document.querySelector('[data-delete-product]');
+  if(deleteProductLinkBtn){
+    deleteProductLinkBtn.addEventListener('click', ()=>{
+      confirmDeleteProductId = deleteProductLinkBtn.getAttribute('data-delete-product');
+      productModalOpen = false;
+      render();
+    });
+  }
+  document.querySelectorAll('[data-cancel-delete-product]').forEach(el=>{
+    el.addEventListener('click', (e)=>{ if(e.target!==el) return; confirmDeleteProductId = null; render(); });
+  });
+  const confirmDeleteProductBtn = document.querySelector('[data-confirm-delete-product]');
+  if(confirmDeleteProductBtn){
+    confirmDeleteProductBtn.addEventListener('click', ()=>{
+      const id = confirmDeleteProductBtn.getAttribute('data-confirm-delete-product');
+      state.products = state.products.filter(p=>p.id!==id);
+      confirmDeleteProductId = null;
+      editingProductId = null;
+      persist(); render();
+      showToast('Producto eliminado');
     });
   }
   const openCategoryBtn = document.querySelector('[data-open-category]');
