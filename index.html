@@ -1465,6 +1465,8 @@ function downloadFormalDocumentImage(html, filename){
   if(!styleMatch || !bodyMatch){ showToast('No se pudo generar la imagen'); return; }
   const styles = styleMatch[1];
   let bodyContent = bodyMatch[1].replace(/<div class="print-btn-wrap">[\s\S]*?<\/div>\s*$/,'');
+  // Escapa cualquier "&" suelto que no sea ya parte de una entidad válida (rompería el XML del SVG)
+  bodyContent = bodyContent.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, '&amp;');
 
   const width = 760, height = 1500;
   const svgHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
@@ -1541,7 +1543,7 @@ function buildFormalQuoteHTML(q){
         <div class="big">¡GRACIAS POR SU <span>PREFERENCIA!</span></div>
         <div class="pill">QUEDAMOS AL PENDIENTE ♥</div>
       </div>
-      <div class="footer-band">• • • &nbsp; SALUD QUE TRANSFORMA &nbsp; • • •</div>
+      <div class="footer-band">• • •   SALUD QUE TRANSFORMA   • • •</div>
       <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
     </div>
   </body></html>`;
@@ -1588,7 +1590,7 @@ function buildFormalReceiptHTML(sale){
         <div class="big">¡GRACIAS POR SU <span>COMPRA!</span></div>
         <div class="pill">VUELVA PRONTO ♥</div>
       </div>
-      <div class="footer-band">• • • &nbsp; SALUD QUE TRANSFORMA &nbsp; • • •</div>
+      <div class="footer-band">• • •   SALUD QUE TRANSFORMA   • • •</div>
       <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
     </div>
   </body></html>`;
