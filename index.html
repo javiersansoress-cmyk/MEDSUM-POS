@@ -1459,35 +1459,199 @@ function openFormalDocument(html){
   setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 
-function downloadFormalDocumentImage(html, filename){
-  const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
-  const bodyMatch = html.match(/<body>([\s\S]*?)<\/body>/);
-  if(!styleMatch || !bodyMatch){ showToast('No se pudo generar la imagen'); return; }
-  const styles = styleMatch[1];
-  let bodyContent = bodyMatch[1].replace(/<div class="print-btn-wrap">[\s\S]*?<\/div>\s*$/,'');
-  // Escapa cualquier "&" suelto que no sea ya parte de una entidad válida (rompería el XML del SVG)
-  bodyContent = bodyContent.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, '&amp;');
+function wrapCanvasText(ctx, text, maxWidth){
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(w=>{
+    const test = line ? line+' '+w : w;
+    if(ctx.measureText(test).width > maxWidth && line){ lines.push(line); line = w; }
+    else { line = test; }
+  });
+  if(line) lines.push(line);
+  return lines;
+}
 
-  const width = 760, height = 1500;
-  const svgHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-    <foreignObject width="100%" height="100%">
-      <div xmlns="http://www.w3.org/1999/xhtml"><style>${styles}</style>${bodyContent}</div>
-    </foreignObject>
-  </svg>`;
+function drawDashedLine(ctx, x1, y, x2){
+  ctx.save();
+  ctx.strokeStyle = '#C7D2D9';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6,5]);
+  ctx.beginPath();
+  ctx.moveTo(x1,y); ctx.lineTo(x2,y);
+  ctx.stroke();
+  ctx.restore();
+}
 
-  const svgBlob = new Blob([svgHtml], {type:'image/svg+xml;charset=utf-8'});
-  const svgUrl = URL.createObjectURL(svgBlob);
-  const img = new Image();
-  img.onload = ()=>{
-    const scale = 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = width*scale; canvas.height = height*scale;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0,0,width,height);
-    ctx.drawImage(img,0,0,width,height);
-    URL.revokeObjectURL(svgUrl);
+async function buildFormalReceiptCanvas(sale){
+  const W = 760;
+  const rowH = 34;
+  const itemsHeight = sale.items.length * rowH;
+  const H = 760 + itemsHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const NAVY = '#0B2A45', TEAL = '#049184', GRAY = '#5D7E96', LIGHTBG = '#F4F7F9';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,W,H);
+
+  let y = 44;
+  // Logo
+  try{
+    const logoImg = new Image();
+    await new Promise((res,rej)=>{ logoImg.onload=res; logoImg.onerror=rej; logoImg.src = MEDSUM_LOGO_SRC; });
+    ctx.drawImage(logoImg, W/2-32, y, 64, 64);
+  }catch(e){}
+  y += 78;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = NAVY;
+  ctx.font = '800 24px Arial, sans-serif';
+  ctx.fillText('MEDSUM', W/2, y);
+  y += 18;
+  ctx.fillStyle = GRAY;
+  ctx.font = '700 10px Arial, sans-serif';
+  ctx.fillText('FARMACIA · TIENDA MÉDICA · MINISÚPER', W/2, y);
+  y += 16;
+  ctx.fillStyle = TEAL;
+  ctx.font = '800 10px Arial, sans-serif';
+  ctx.fillText('SALUD QUE TRANSFORMA', W/2, y);
+  y += 18;
+  drawDashedLine(ctx, 44, y, W-44);
+  y += 32;
+
+  // Contacto (izq) / meta (der)
+  ctx.textAlign = 'left';
+  ctx.fillStyle = NAVY;
+  ctx.font = '12px Arial, sans-serif';
+  ctx.fillText('📍 ' + MEDSUM_CONTACT.address1 + ', ' + MEDSUM_CONTACT.address2, 44, y);
+  ctx.fillText('📞 ' + MEDSUM_CONTACT.phone, 44, y+22);
+  ctx.fillText('📷 ' + MEDSUM_CONTACT.instagram, 44, y+44);
+
+  const metaRows = [
+    ['FOLIO', sale.folio || sale.id.slice(-6).toUpperCase()],
+    ['FECHA', formatDateDMY(sale.date)],
+    ['HORA', formatHora(sale.timestamp)],
+    ['CLIENTE', sale.clientName || 'Público en general']
+  ];
+  ctx.textAlign = 'right';
+  metaRows.forEach((r,i)=>{
+    const ry = y + i*22 - 3;
+    ctx.font = '800 12px Arial, sans-serif';
+    ctx.fillStyle = NAVY;
+    let label = r[0]+': ';
+    ctx.font = '600 12px Arial, sans-serif';
+    ctx.fillStyle = '#16263A';
+    ctx.fillText(r[1], W-44, ry);
+    const valW = ctx.measureText(r[1]).width;
+    ctx.font = '800 12px Arial, sans-serif';
+    ctx.fillStyle = NAVY;
+    ctx.fillText(label, W-44-valW-4, ry);
+  });
+  y += 62;
+  drawDashedLine(ctx, 44, y, W-44);
+  y += 8;
+
+  // Tabla
+  ctx.fillStyle = NAVY;
+  ctx.fillRect(44, y, W-88, 30);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 10px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('CANT.', 54, y+19);
+  ctx.fillText('DESCRIPCIÓN', 120, y+19);
+  ctx.textAlign = 'right';
+  ctx.fillText('PRECIO UNIT.', W-210, y+19);
+  ctx.fillText('IMPORTE', W-54, y+19);
+  y += 30;
+
+  sale.items.forEach((it,i)=>{
+    const ry = y + i*rowH;
+    if(i%2===1){ ctx.fillStyle = '#FAFCFD'; ctx.fillRect(44, ry, W-88, rowH); }
+    ctx.fillStyle = '#16263A';
+    ctx.font = '12px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(it.qty), 54, ry+21);
+    let desc = it.name;
+    ctx.font = '12px Arial, sans-serif';
+    while(ctx.measureText(desc).width > 300 && desc.length>3){ desc = desc.slice(0,-1); }
+    if(desc.length < it.name.length) desc = desc.slice(0,-1)+'…';
+    ctx.fillText(desc, 120, ry+21);
+    ctx.textAlign = 'right';
+    ctx.fillText(money(it.price), W-210, ry+21);
+    ctx.fillText(money(it.price*it.qty), W-54, ry+21);
+  });
+  y += itemsHeight;
+  ctx.strokeStyle = '#E3E9ED'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(44,y); ctx.lineTo(W-44,y); ctx.stroke();
+  y += 30;
+
+  // Totales
+  const subtotal = sale.items.reduce((s,it)=>s+it.price*it.qty,0);
+  const discount = Math.max(0, subtotal - sale.total);
+  const {base, iva} = ivaBreakdown(sale.total);
+  const totalRows = [];
+  if(discount>0){
+    totalRows.push(['Suma de productos', money(subtotal), false]);
+    totalRows.push(['DESCUENTO', '-'+money(discount), false]);
+  }
+  totalRows.push(['SUBTOTAL', money(base), false]);
+  totalRows.push(['IVA (16%)', money(iva), false]);
+  totalRows.push(['TOTAL', money(sale.total), true]);
+
+  totalRows.forEach((r,i)=>{
+    const ry = y + i*30;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = r[2] ? TEAL : GRAY;
+    ctx.font = r[2] ? '800 15px Arial, sans-serif' : '600 12px Arial, sans-serif';
+    ctx.fillText(r[0]+':', W-220, ry);
+    ctx.font = r[2] ? '800 16px Arial, sans-serif' : '700 12px Arial, sans-serif';
+    ctx.fillText(r[1], W-54, ry);
+  });
+  y += totalRows.length*30 + 20;
+
+  // Notas
+  ctx.fillStyle = LIGHTBG;
+  const notesText = 'Este documento es un comprobante de compra (' + (sale.paymentMethod||'-') + ' · ' + (sale.paymentType||'Pagada') + '). Para cambios y devoluciones, presenta este recibo dentro de los siguientes 5 días hábiles junto con el producto en su empaque original.';
+  ctx.font = '10.5px Arial, sans-serif';
+  const noteLines = wrapCanvasText(ctx, notesText, W-100);
+  const notesBoxH = noteLines.length*16 + 24;
+  ctx.fillRect(44, y, W-88, notesBoxH);
+  ctx.fillStyle = GRAY;
+  ctx.textAlign = 'left';
+  noteLines.forEach((line,i)=>ctx.fillText(line, 60, y+22+i*16));
+  y += notesBoxH + 34;
+
+  // Agradecimiento
+  ctx.textAlign = 'center';
+  ctx.font = '800 18px Arial, sans-serif';
+  ctx.fillStyle = NAVY;
+  ctx.fillText('¡GRACIAS POR SU COMPRA!', W/2, y);
+  y += 30;
+  ctx.font = '800 11px Arial, sans-serif';
+  const pillText = 'VUELVA PRONTO ♥';
+  const pillW = ctx.measureText(pillText).width + 40;
+  ctx.fillStyle = TEAL;
+  ctx.beginPath();
+  ctx.roundRect(W/2-pillW/2, y-14, pillW, 28, 14);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(pillText, W/2, y+5);
+  y += 40;
+
+  // Footer
+  ctx.fillStyle = NAVY;
+  ctx.fillRect(0, y, W, 44);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 11px Arial, sans-serif';
+  ctx.fillText('•  •  •   SALUD QUE TRANSFORMA   •  •  •', W/2, y+27);
+
+  return canvas;
+}
+
+async function downloadFormalDocumentImage(sale, filename){
+  try{
+    const canvas = await buildFormalReceiptCanvas(sale);
     canvas.toBlob(blob=>{
       if(!blob){ showToast('No se pudo generar la imagen'); return; }
       const a = document.createElement('a');
@@ -1495,9 +1659,9 @@ function downloadFormalDocumentImage(html, filename){
       a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
     }, 'image/png');
-  };
-  img.onerror = ()=>{ URL.revokeObjectURL(svgUrl); showToast('No se pudo generar la imagen, intenta de nuevo'); };
-  img.src = svgUrl;
+  }catch(e){
+    showToast('No se pudo generar la imagen, intenta de nuevo');
+  }
 }
 
 function ivaBreakdown(finalAmount){
@@ -3627,7 +3791,7 @@ function attachHandlers(){
   if(formalReceiptEl){
     formalReceiptEl.addEventListener('click', ()=>{
       const sale = state.sales.find(s=>s.id===formalReceiptEl.getAttribute('data-formal-receipt'));
-      if(sale) downloadFormalDocumentImage(buildFormalReceiptHTML(sale), `Recibo_${sale.folio||sale.id}.png`);
+      if(sale) downloadFormalDocumentImage(sale, `Recibo_${sale.folio||sale.id}.png`);
     });
   }
 
