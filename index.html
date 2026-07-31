@@ -92,6 +92,18 @@
 
   .content{padding:24px 28px;overflow-y:auto;flex:1;}
 
+  .vender-products-col{ margin-right:340px; }
+  .vender-cart-panel{
+    width:320px;padding:18px;
+    position:fixed;top:92px;right:28px;
+    max-height:calc(100vh - 112px);overflow-y:auto;
+    z-index:15;
+  }
+  @media (max-width:1100px){
+    .vender-cart-panel{ position:static; width:auto; max-height:none; }
+    .vender-products-col{ margin-right:0; }
+  }
+
   .card{background:var(--card);border:1px solid rgba(0,0,0,0.03);border-radius:var(--radius);box-shadow:var(--shadow);transition:box-shadow .2s ease;}
 
   input, select{
@@ -910,7 +922,7 @@ function renderVender(){
 
   return `
   <div style="display:flex;gap:20px;align-items:flex-start;">
-    <div style="flex:1;min-width:0;">
+    <div class="vender-products-col" style="flex:1;min-width:0;">
       <div style="display:flex;gap:10px;margin-bottom:14px;">
         <input id="vender-search" style="flex:1;" placeholder="Buscar productos" value="${escapeAttr(venderSearch)}"/>
       </div>
@@ -925,7 +937,7 @@ function renderVender(){
           </div>`}
       </div>
     </div>
-    <div class="card" style="width:320px;flex-shrink:0;padding:18px;position:sticky;top:0;">
+    <div class="card vender-cart-panel">
       ${venderStep==='cart' ? CartPanel(cartTotal, cartCount) : PaymentPanel(cartTotal, cartCount)}
     </div>
   </div>`;
@@ -1315,19 +1327,29 @@ async function downloadTicketImage(saleId){
   }
 }
 
+function isMobileDevice(){
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 async function shareTicketImageWhatsApp(saleId){
   const sale = state.sales.find(s=>s.id===saleId);
   if(!sale) return;
-  try{
-    const canvas = await drawTicketToCanvas(sale);
-    const blob = await canvasToBlob(canvas);
-    const file = new File([blob], 'ticket-'+(sale.folio||sale.id)+'.png', {type:'image/png'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'Ticket MEDSUM', text:'Aquí tienes tu ticket de compra 💙'});
-      return;
+  if(isMobileDevice()){
+    try{
+      const canvas = await drawTicketToCanvas(sale);
+      const blob = await canvasToBlob(canvas);
+      const file = new File([blob], 'ticket-'+(sale.folio||sale.id)+'.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'Ticket MEDSUM', text:'Aquí tienes tu ticket de compra 💙'});
+        return;
+      }
+    }catch(e){
+      // el usuario canceló el menú de compartir a propósito: no seguimos con el respaldo
+      if(e && e.name === 'AbortError') return;
     }
-  }catch(e){ /* el usuario canceló o no es soportado, seguimos con el respaldo */ }
-  // Respaldo: descarga la imagen y abre WhatsApp con el texto, para adjuntarla manualmente
+  }
+  // Computadora (o celular sin soporte para compartir archivos): descarga la imagen
+  // y abre WhatsApp con el texto ya listo, para adjuntarla manualmente en el chat
   await downloadTicketImage(saleId);
   if(sale.clientPhone){
     showToast('Ticket descargado. Adjúntalo en el chat de WhatsApp que se abrió');
