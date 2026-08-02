@@ -1540,6 +1540,154 @@ function formalInfoRow(metaRows){
     <hr class="dashed"/>`;
 }
 
+function getPreviousPeriodKey(period, refDate){
+  const d = new Date(refDate+'T00:00:00');
+  const deltas = {Diario:1, Semanal:7, Quincenal:15, Mensual:30};
+  d.setDate(d.getDate() - (deltas[period]||1));
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return getPeriodKey(`${y}-${m}-${day}`, period);
+}
+
+function buildBalanceReportHTML(){
+  const period = balancePeriod;
+  const refKey = getPeriodKey(balanceRefDate, period);
+  const prevKey = getPreviousPeriodKey(period, balanceRefDate);
+
+  const salesInRange = state.sales.filter(s=>getPeriodKey(s.date, period)===refKey);
+  const expensesInRange = state.expenses.filter(e=>getPeriodKey(e.date, period)===refKey);
+  const salesPrev = state.sales.filter(s=>getPeriodKey(s.date, period)===prevKey);
+  const expensesPrev = state.expenses.filter(e=>getPeriodKey(e.date, period)===prevKey);
+
+  const costOf = (sale)=> sale.items.reduce((s,it)=>{
+    const p = state.products.find(x=>x.id===it.productId);
+    return s + (p?p.cost:0)*it.qty;
+  },0);
+
+  const ingresos = salesInRange.reduce((s,x)=>s+x.total,0);
+  const egresos = expensesInRange.reduce((s,x)=>s+x.amount,0);
+  const costoVentas = salesInRange.reduce((s,x)=>s+costOf(x),0);
+  const gananciaBruta = ingresos - costoVentas;
+  const gananciaNeta = gananciaBruta - egresos;
+  const balanceNeto = ingresos - egresos;
+
+  const ingresosPrev = salesPrev.reduce((s,x)=>s+x.total,0);
+  const egresosPrev = expensesPrev.reduce((s,x)=>s+x.amount,0);
+  const gananciaPrev = salesPrev.reduce((s,x)=>s+x.total-costOf(x),0) - egresosPrev;
+
+  const pctChange = (curr, prev)=> prev>0 ? Math.round(((curr-prev)/prev)*1000)/10 : (curr>0?100:0);
+  const ingresosPct = pctChange(ingresos, ingresosPrev);
+  const gananciaPct = pctChange(gananciaNeta, gananciaPrev);
+
+  // Top productos vendidos en el periodo
+  const prodStats = {};
+  salesInRange.forEach(s=>s.items.forEach(it=>{
+    if(!prodStats[it.productId]) prodStats[it.productId] = {name:it.name, total:0, qty:0};
+    prodStats[it.productId].total += it.price*it.qty;
+    prodStats[it.productId].qty += it.qty;
+  }));
+  const topProducts = Object.values(prodStats).sort((a,b)=>b.total-a.total).slice(0,5);
+
+  const chartMax = Math.max(1, ingresos, egresos, ingresosPrev, egresosPrev);
+  const pLabel = periodLabel(period);
+  const wordPeriod = {Diario:'el día', Semanal:'la semana', Quincenal:'la quincena', Mensual:'el mes'}[period] || 'el periodo';
+
+  // Texto de análisis generado automáticamente
+  let analysis = `Durante ${wordPeriod} (${balanceRangeLabel()}) MEDSUM registró ${salesInRange.length} venta${salesInRange.length===1?'':'s'} `+
+    `por un total de ${money(ingresos)} en ingresos y ${money(egresos)} en gastos, dejando un balance neto de ${money(balanceNeto)} `+
+    `y una ganancia neta (descontando costo de producto y gastos) de ${money(gananciaNeta)}. `;
+  if(ingresosPrev>0 || egresosPrev>0){
+    analysis += `Comparado con ${pLabel} anterior, los ingresos ${ingresosPct>=0?'aumentaron':'disminuyeron'} ${Math.abs(ingresosPct)}% `+
+      `y la ganancia neta ${gananciaPct>=0?'aumentó':'disminuyó'} ${Math.abs(gananciaPct)}%. `;
+  } else {
+    analysis += `No hay datos del ${pLabel} anterior para comparar. `;
+  }
+  if(topProducts.length){
+    analysis += `El producto con mayores ventas fue "${topProducts[0].name}" con ${money(topProducts[0].total)} (${topProducts[0].qty} unidad${topProducts[0].qty===1?'':'es'}). `;
+  }
+  analysis += gananciaNeta>=0
+    ? `En general, ${wordPeriod} cerró con números positivos para el negocio.`
+    : `${wordPeriod[0].toUpperCase()+wordPeriod.slice(1)} cerró con números negativos: los gastos y costos superaron a los ingresos, conviene revisar el desglose de egresos.`;
+
+  const logoTag = MEDSUM_LOGO_SRC ? `<img src="${MEDSUM_LOGO_SRC}"/>` : '';
+  const expenseRows = expensesInRange.map(e=>`<tr><td>${formatDateDMY(e.date)}</td><td>${e.concept}</td><td class="num">-${money(e.amount)}</td></tr>`).join('');
+  const productRows = topProducts.map(p=>`<tr><td>${p.name}</td><td class="num">${p.qty}</td><td class="num">${money(p.total)}</td></tr>`).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Reporte de Balance MEDSUM</title><style>
+    ${formalDocStyles()}
+    .metrics{display:flex;gap:14px;margin:18px 0;flex-wrap:wrap;}
+    .metric{flex:1;min-width:140px;background:#F4F7F9;border-radius:10px;padding:14px;}
+    .metric .l{font-size:10.5px;color:#5D7E96;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;}
+    .metric .v{font-size:19px;font-weight:800;margin-top:4px;}
+    .metric.pos .v{color:#049184;} .metric.neg .v{color:#E5484D;}
+    .chart-wrap{display:flex;align-items:flex-end;gap:40px;height:170px;padding:10px 20px 0;margin-bottom:8px;}
+    .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+    .chart-col .bar-label{font-size:11px;color:#5D7E96;margin-top:6px;}
+    .chart-col .bar-value{font-size:12px;font-weight:700;margin-bottom:6px;}
+    .bar{width:60%;border-radius:8px 8px 0 0;}
+    .bar.in{background:#049184;} .bar.in.prev{background:#B9E4DC;}
+    .bar.out{background:#E5484D;} .bar.out.prev{background:#F7C9C9;}
+    .legend{display:flex;gap:16px;font-size:11px;color:#5D7E96;margin:0 0 6px;}
+    .legend span{display:inline-flex;align-items:center;gap:5px;}
+    .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+    .analysis-box{background:#F0F9F7;border:1px solid #B9E4DC;border-radius:10px;padding:14px 16px;font-size:12.5px;line-height:1.6;color:#16263A;margin:18px 0;}
+    h2.sec{font-size:13px;margin:22px 0 8px;color:#0B2A45;}
+  </style></head>
+  <body>
+    <div class="page">
+      ${formalLetterhead(logoTag)}
+      ${formalInfoRow([
+        ['REPORTE', 'Balance ' + period],
+        ['PERIODO', balanceRangeLabel()],
+        ['GENERADO', formatDateDMY(todayISO())],
+      ])}
+
+      <div class="metrics">
+        <div class="metric ${balanceNeto>=0?'pos':'neg'}"><div class="l">Balance</div><div class="v">${money(balanceNeto)}</div></div>
+        <div class="metric pos"><div class="l">Ingresos</div><div class="v">${money(ingresos)}</div></div>
+        <div class="metric neg"><div class="l">Egresos</div><div class="v">${money(egresos)}</div></div>
+        <div class="metric ${gananciaNeta>=0?'pos':'neg'}"><div class="l">Ganancia neta</div><div class="v">${money(gananciaNeta)}</div></div>
+      </div>
+
+      <h2 class="sec">Ingresos vs. egresos (comparado con ${pLabel} anterior)</h2>
+      <div class="legend">
+        <span><i style="background:#B9E4DC;"></i>${pLabel[0].toUpperCase()+pLabel.slice(1)} anterior</span>
+        <span><i style="background:#049184;"></i>${pLabel[0].toUpperCase()+pLabel.slice(1)} actual</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-col"><div class="bar-value">${money(ingresosPrev)}</div><div class="bar in prev" style="height:${Math.max(4,(ingresosPrev/chartMax)*100)}%;"></div><div class="bar-label">Ingresos anteriores</div></div>
+        <div class="chart-col"><div class="bar-value">${money(ingresos)}</div><div class="bar in" style="height:${Math.max(4,(ingresos/chartMax)*100)}%;"></div><div class="bar-label">Ingresos actuales</div></div>
+        <div class="chart-col"><div class="bar-value">${money(egresosPrev)}</div><div class="bar out prev" style="height:${Math.max(4,(egresosPrev/chartMax)*100)}%;"></div><div class="bar-label">Egresos anteriores</div></div>
+        <div class="chart-col"><div class="bar-value">${money(egresos)}</div><div class="bar out" style="height:${Math.max(4,(egresos/chartMax)*100)}%;"></div><div class="bar-label">Egresos actuales</div></div>
+      </div>
+
+      <h2 class="sec">Análisis de ${wordPeriod}</h2>
+      <div class="analysis-box">${analysis}</div>
+
+      ${topProducts.length ? `
+      <h2 class="sec">Productos más vendidos</h2>
+      <table class="items">
+        <thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Ventas</th></tr></thead>
+        <tbody>${productRows}</tbody>
+      </table>` : ''}
+
+      ${expensesInRange.length ? `
+      <h2 class="sec">Detalle de gastos</h2>
+      <table class="items">
+        <thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Monto</th></tr></thead>
+        <tbody>${expenseRows}</tbody>
+      </table>` : ''}
+
+      <div class="notes">
+        Este reporte fue generado automáticamente por el sistema de punto de venta de MEDSUM a partir de las transacciones registradas en el periodo seleccionado. La ganancia neta descuenta el costo de los productos vendidos y los gastos operativos del periodo.
+      </div>
+      <div class="footer-band">• • •   SALUD QUE TRANSFORMA   • • •</div>
+      <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
+    </div>
+  </body></html>`;
+}
+
 function openFormalDocument(html){
   const blob = new Blob([html], {type:'text/html'});
   const url = URL.createObjectURL(blob);
@@ -3999,24 +4147,7 @@ function attachHandlers(){
       const salesInRange = state.sales.filter(s=>getPeriodKey(s.date, balancePeriod)===refKey);
       const expensesInRange = state.expenses.filter(e=>getPeriodKey(e.date, balancePeriod)===refKey);
       if(!salesInRange.length && !expensesInRange.length) return;
-      const lines = ['MEDSUM - Reporte de balance', 'Periodo: '+balancePeriod+' · '+balanceRangeLabel(), ''];
-      lines.push('INGRESOS');
-      salesInRange.forEach(s=>{ lines.push(`${s.date} | ${s.items.map(i=>i.name+' x'+i.qty).join(', ')} | ${money(s.total)}`); });
-      lines.push('');
-      lines.push('EGRESOS');
-      expensesInRange.forEach(e=>{ lines.push(`${e.date} | ${e.concept} | -${money(e.amount)}`); });
-      lines.push('');
-      const ventas = salesInRange.reduce((s,x)=>s+x.total,0);
-      const gastos = expensesInRange.reduce((s,x)=>s+x.amount,0);
-      lines.push('Ventas totales: '+money(ventas));
-      lines.push('Gastos totales: '+money(gastos));
-      lines.push('Balance: '+money(ventas-gastos));
-      const blob = new Blob([lines.join('\n')], {type:'text/plain'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'balance-'+balanceRefDate+'.txt';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      openFormalDocument(buildBalanceReportHTML());
     });
   }
   const openExpenseBtn = document.querySelector('[data-open-expense]');
