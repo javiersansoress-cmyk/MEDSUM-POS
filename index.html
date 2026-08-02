@@ -95,8 +95,8 @@
   .vender-products-col{ margin-right:340px; }
   .vender-cart-panel{
     width:320px;padding:18px;
-    position:fixed;top:92px;right:28px;
-    max-height:calc(100vh - 112px);overflow-y:auto;
+    position:fixed;top:118px;right:28px;
+    max-height:calc(100vh - 138px);overflow-y:auto;
     z-index:15;
   }
   @media (max-width:1100px){
@@ -546,7 +546,7 @@ const REAL_PRODUCTS = [
       {id:'p196', name:'Yelco #24', category:'Sin categoría', price:35.0, cost:0.0, stock:0},
     ];
 
-const CATEGORIES = [...new Set(REAL_PRODUCTS.map(p=>p.category))].sort();
+// CATEGORIES ahora se toma de state.categories (ver más abajo, tras cargar el estado guardado)
 
 function normalizeQuote(q){
   return Object.assign({
@@ -564,6 +564,7 @@ function seedState(){
   return {
     products: REAL_PRODUCTS.map(p=>({...p})),
     productDataVersion: PRODUCT_DATA_VERSION,
+    categories: [...new Set(REAL_PRODUCTS.map(p=>p.category))].sort(),
     clients: REAL_CLIENTS.map(normalizeClient),
     loyaltySettings: Object.assign({}, REAL_LOYALTY_SETTINGS),
     clientDataVersion: CLIENT_DATA_VERSION,
@@ -597,6 +598,9 @@ function loadState(){
         parsed.productDataVersion = PRODUCT_DATA_VERSION;
       }
       parsed.quotes = (parsed.quotes||[]).map(normalizeQuote);
+      if(!parsed.categories || !parsed.categories.length){
+        parsed.categories = [...new Set((parsed.products||[]).map(p=>p.category))].sort();
+      }
       return parsed;
     }
   }catch(e){}
@@ -604,6 +608,7 @@ function loadState(){
 }
 
 let state = loadState();
+const CATEGORIES = state.categories;
 
 /* ========= SINCRONIZACIÓN CON GOOGLE APPS SCRIPT (API de datos) =========
    Reemplaza la URL de abajo por la que te da Apps Script al implementar
@@ -923,7 +928,24 @@ function renderView(){
 let venderSearch = '';
 let venderCategory = 'Todos';
 let venderStep = 'cart'; // 'cart' | 'payment'
-let paymentData = { type:'Pagada', date: todayISO(), numPayments:1, method:'Efectivo', invoice:false, discountPct:0, clientId:null, appliedCouponId:null };
+let paymentData = { type:'Pagada', date: todayISO(), numPayments:1, method:'Efectivo', invoice:false, discountPct:0, clientId:null, appliedCouponId:null, splits:[{amount:null, method:'Efectivo'}], customCount:2 };
+
+function rebuildPaymentSplits(n){
+  const finalTotal = computeCartFinalTotal();
+  if(n===1){
+    paymentData.splits = [{amount: finalTotal, method: paymentData.method || 'Efectivo'}];
+    return;
+  }
+  const base = Math.floor((finalTotal/n)*100)/100;
+  const splits = [];
+  let sum = 0;
+  for(let i=0;i<n;i++){
+    const amt = i===n-1 ? Math.round((finalTotal-sum)*100)/100 : base;
+    splits.push({amount: amt, method: 'Efectivo'});
+    sum += amt;
+  }
+  paymentData.splits = splits;
+}
 let clientSearchQuery = '';
 let clientAddMode = false;
 let clientAddType = 'publico';
@@ -1026,15 +1048,45 @@ function PaymentPanel(cartTotal, cartCount){
         <div data-num-payments="${n}" class="chip ${paymentData.numPayments===n?'active':''}" style="min-width:34px;text-align:center;padding:8px 10px;">${n}</div>
       `).join('')}
     </div>
+    ${paymentData.numPayments==='Otro' ? `
+      <div class="field" style="margin-bottom:16px;">
+        <label>¿Cuántos pagos? *</label>
+        <input type="number" id="custom-num-payments" min="2" value="${paymentData.customCount||2}"/>
+      </div>
+    ` : ''}
 
-    <div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">Método de pago *</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
-      ${methods.map(m=>`
-        <div data-payment-method="${m.id}" style="border:1.5px solid ${paymentData.method===m.id?'var(--turquoise)':'var(--border)'};border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;background:${paymentData.method===m.id?'var(--turquoise-light)':'#fff'};">
-          ${m.label}
+    ${paymentData.splits.length<=1 ? `
+      <div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">Método de pago *</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+        ${methods.map(m=>`
+          <div data-payment-method="${m.id}" style="border:1.5px solid ${paymentData.method===m.id?'var(--turquoise)':'var(--border)'};border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;background:${paymentData.method===m.id?'var(--turquoise-light)':'#fff'};">
+            ${m.label}
+          </div>
+        `).join('')}
+      </div>
+    ` : `
+      <div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:10px;">Monto y método de cada pago *</div>
+      ${paymentData.splits.map((s,i)=>`
+        <div class="field-row" style="margin-bottom:12px;">
+          <div class="field"><label>Monto a pagar</label><input type="number" min="0" step="0.01" data-split-amount="${i}" value="${s.amount??''}"/></div>
+          <div class="field"><label>Método de pago</label>
+            <select data-split-method="${i}">
+              ${methods.map(m=>`<option value="${m.id}" ${s.method===m.id?'selected':''}>${m.label}</option>`).join('')}
+            </select>
+          </div>
         </div>
       `).join('')}
-    </div>
+      ${(()=>{
+        const finalTotal = computeCartFinalTotal();
+        const sum = paymentData.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
+        const diff = Math.round((finalTotal - sum)*100)/100;
+        const ok = Math.abs(diff) < 0.01;
+        return `<div style="display:flex;align-items:center;gap:8px;background:${ok?'var(--success-light)':'#FFF3DC'};border:1px solid ${ok?'var(--success)':'#F0C36D'};border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:13px;font-weight:600;color:${ok?'#1F9C46':'#B7791F'};">
+          <span>${ok?'✓':'⚠️'}</span>
+          <span>${ok ? 'Los pagos suman el total de la orden: '+money(finalTotal) : (diff>0 ? 'Faltan '+money(diff)+' para completar el total' : 'Los pagos exceden el total por '+money(-diff))}</span>
+        </div>`;
+      })()}
+    `}
 
     <div class="card" style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div>
@@ -1142,14 +1194,14 @@ function ProductCard(p){
   const outOfStock = p.stock <= 0;
   const inCart = state.cart.find(i=>i.productId===p.id);
   return `
-  <div class="card" data-add-product="${p.id}" style="padding:14px;cursor:${outOfStock?'not-allowed':'pointer'};opacity:${outOfStock?0.55:1};transition:transform .1s ease;position:relative;" ${outOfStock?'':'onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'translateY(0)\'"'}>
+  <div class="card" data-add-product="${p.id}" style="padding:14px;cursor:pointer;opacity:${outOfStock?0.75:1};transition:transform .1s ease;position:relative;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
     ${inCart ? `<div style="position:absolute;top:8px;right:8px;background:var(--navy);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;z-index:2;">${inCart.qty}</div>` : ''}
     <div style="height:74px;border-radius:12px;margin-bottom:10px;overflow:hidden;">
       ${productThumb(p)}
     </div>
     <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${money(p.price)}</div>
     <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;line-height:1.3;min-height:32px;">${p.name}</div>
-    <span class="badge ${outOfStock?'badge-danger':'badge-success'}">${p.stock} disponibles</span>
+    <span class="badge ${outOfStock?'badge-danger':'badge-success'}">${outOfStock?'Sin stock · disponible bajo pedido':p.stock+' disponibles'}</span>
   </div>`;
 }
 
@@ -1183,34 +1235,28 @@ function escapeAttr(s){
 
 function addToCart(productId){
   const p = state.products.find(x=>x.id===productId);
-  if(!p || p.stock<=0) return;
+  if(!p) return;
   const existing = state.cart.find(i=>i.productId===productId);
-  const currentQty = existing ? existing.qty : 0;
-  if(currentQty >= p.stock){ showToast('No hay más unidades disponibles'); return; }
   if(existing){ existing.qty += 1; } else { state.cart.push({productId, qty:1}); }
   persist(); render();
 }
 
 function changeQty(productId, delta){
   const item = state.cart.find(i=>i.productId===productId);
-  const p = state.products.find(x=>x.id===productId);
   if(!item) return;
   item.qty += delta;
-  if(item.qty > p.stock){ item.qty = p.stock; }
   if(item.qty <= 0){ state.cart = state.cart.filter(i=>i.productId!==productId); }
   persist(); render();
 }
 
 function setQty(productId, qty, isLive){
   const item = state.cart.find(i=>i.productId===productId);
-  const p = state.products.find(x=>x.id===productId);
-  if(!item || !p) return;
-  const maxQty = p.stock + item.qty;
+  if(!item) return;
   if(isLive){
-    // allow transient 0 while typing (e.g. clearing the field), clamp only the ceiling
-    item.qty = Math.max(0, Math.min(qty, maxQty));
+    // allow transient 0 while typing (e.g. clearing the field)
+    item.qty = Math.max(0, qty);
   } else {
-    item.qty = Math.max(1, Math.min(qty, maxQty));
+    item.qty = Math.max(1, qty);
   }
   persist(); render();
 }
@@ -1971,6 +2017,22 @@ function checkout(){
   },0);
   const discountAmount = Math.round((total * (paymentData.discountPct||0) / 100) * 100) / 100;
   const finalTotal = total - discountAmount;
+
+  // Validar que los pagos divididos sumen el total antes de continuar (solo aplica si hay más de un pago)
+  if(paymentData.splits.length > 1){
+    const splitsSum = paymentData.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
+    if(Math.abs(finalTotal - splitsSum) >= 0.01){
+      showToast('Los pagos no suman el total de la venta');
+      return;
+    }
+  } else {
+    paymentData.splits[0].amount = finalTotal;
+  }
+  const uniqueMethods = [...new Set(paymentData.splits.map(s=>s.method))];
+  const paymentMethodSummary = paymentData.splits.length<=1
+    ? paymentData.splits[0].method
+    : paymentData.splits.map(s=>`${s.method} (${money(s.amount)})`).join(' + ');
+
   const client = state.clients.find(c=>c.id===paymentData.clientId);
   const items = state.cart.map(item=>{
     const p = state.products.find(x=>x.id===item.productId);
@@ -1981,7 +2043,7 @@ function checkout(){
   const saleId = uid('sale');
   const itemsText = items.map(it=>`${it.qty} ${it.name}`).join(', ');
   const folio = String(state.sales.length + 1).padStart(6, '0');
-  state.sales.push({id:saleId, date:todayISO(), timestamp:Date.now(), folio, items, total:finalTotal, paymentMethod: paymentData.method, paymentType: paymentData.type, clientName: client?client.name:'Público en general', clientId: client?client.id:null, clientPhone: client?client.phone:'', name:''});
+  state.sales.push({id:saleId, date:todayISO(), timestamp:Date.now(), folio, items, total:finalTotal, paymentMethod: paymentMethodSummary, paymentSplits: paymentData.splits.map(s=>({amount:s.amount, method:s.method})), paymentType: paymentData.type, clientName: client?client.name:'Público en general', clientId: client?client.id:null, clientPhone: client?client.phone:'', name:''});
 
   let loyaltyMsg = '';
   if(client){
@@ -2003,6 +2065,9 @@ function checkout(){
   paymentData.appliedCouponId = null;
   paymentData.discountPct = 0;
   paymentData.clientId = null;
+  paymentData.numPayments = 1;
+  paymentData.method = 'Efectivo';
+  paymentData.splits = [{amount:null, method:'Efectivo'}];
   venderStep = 'cart';
   lastSaleId = saleId;
   saleNameInput = itemsText;
@@ -2959,12 +3024,12 @@ function QuoteProductCard(p){
   const outOfStock = p.stock <= 0;
   const inCart = quoteEditCart.find(i=>i.productId===p.id);
   return `
-  <div class="card" data-add-quote-product="${p.id}" style="padding:14px;cursor:${outOfStock?'not-allowed':'pointer'};opacity:${outOfStock?0.55:1};position:relative;">
+  <div class="card" data-add-quote-product="${p.id}" style="padding:14px;cursor:pointer;opacity:${outOfStock?0.75:1};position:relative;">
     ${inCart ? `<div style="position:absolute;top:8px;right:8px;background:var(--navy);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;z-index:2;">${inCart.qty}</div>` : ''}
     <div style="height:74px;border-radius:12px;margin-bottom:10px;overflow:hidden;">${productThumb(p)}</div>
     <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${money(p.price)}</div>
     <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px;line-height:1.3;min-height:32px;">${p.name}</div>
-    <span class="badge ${outOfStock?'badge-danger':'badge-success'}">${p.stock} disponibles</span>
+    <span class="badge ${outOfStock?'badge-danger':'badge-success'}">${outOfStock?'Sin stock · disponible bajo pedido':p.stock+' disponibles'}</span>
   </div>`;
 }
 
@@ -3694,11 +3759,46 @@ function attachHandlers(){
     el.addEventListener('click', ()=>{
       const v = el.getAttribute('data-num-payments');
       paymentData.numPayments = v==='Otro' ? 'Otro' : Number(v);
+      if(v==='Otro'){
+        rebuildPaymentSplits(paymentData.customCount||2);
+      } else {
+        rebuildPaymentSplits(Number(v));
+      }
+      render();
+    });
+  });
+  const customNumPaymentsEl = document.getElementById('custom-num-payments');
+  if(customNumPaymentsEl){
+    customNumPaymentsEl.addEventListener('change', (e)=>{
+      const n = Math.max(2, Number(e.target.value)||2);
+      paymentData.customCount = n;
+      rebuildPaymentSplits(n);
+      render();
+    });
+  }
+  document.querySelectorAll('[data-split-amount]').forEach(el=>{
+    el.addEventListener('input', (e)=>{
+      const i = Number(el.getAttribute('data-split-amount'));
+      if(paymentData.splits[i]) paymentData.splits[i].amount = e.target.value===''?null:Number(e.target.value);
+      const pos = e.target.selectionStart;
+      render();
+      const ne = document.querySelector(`[data-split-amount="${i}"]`);
+      if(ne){ ne.focus(); ne.setSelectionRange(pos,pos); }
+    });
+  });
+  document.querySelectorAll('[data-split-method]').forEach(el=>{
+    el.addEventListener('change', (e)=>{
+      const i = Number(el.getAttribute('data-split-method'));
+      if(paymentData.splits[i]) paymentData.splits[i].method = e.target.value;
       render();
     });
   });
   document.querySelectorAll('[data-payment-method]').forEach(el=>{
-    el.addEventListener('click', ()=>{ paymentData.method = el.getAttribute('data-payment-method'); render(); });
+    el.addEventListener('click', ()=>{
+      paymentData.method = el.getAttribute('data-payment-method');
+      if(paymentData.splits[0]) paymentData.splits[0].method = paymentData.method;
+      render();
+    });
   });
   const toggleInvoiceEl = document.querySelector('[data-toggle-invoice]');
   if(toggleInvoiceEl){ toggleInvoiceEl.addEventListener('click', ()=>{ paymentData.invoice = !paymentData.invoice; render(); }); }
@@ -3709,6 +3809,7 @@ function attachHandlers(){
     paymentDiscountEl.addEventListener('change', (e)=>{
       paymentData.discountPct = Math.max(0, Math.min(100, Number(e.target.value)||0));
       paymentData.appliedCouponId = null;
+      if(paymentData.splits.length<=1){ rebuildPaymentSplits(1); }
       render();
     });
   }
@@ -3778,13 +3879,14 @@ function attachHandlers(){
         paymentData.appliedCouponId = couponId;
         paymentData.discountPct = cp.pct;
       }
+      if(paymentData.splits.length<=1){ rebuildPaymentSplits(1); }
       render();
     });
   });
   const checkoutEl = document.querySelector('[data-checkout]');
   if(checkoutEl){
     checkoutEl.addEventListener('click', ()=>{
-      if(paymentData.method==='Efectivo'){
+      if(paymentData.splits.length<=1 && paymentData.method==='Efectivo'){
         cashReceivedInput = '';
         cashCalcOpen = true;
         render();
@@ -4406,7 +4508,11 @@ function attachHandlers(){
     saveCategoryBtn.addEventListener('click', ()=>{
       const name = document.getElementById('category-name').value.trim();
       if(!name){ showToast('Escribe el nombre de la categoría'); return; }
-      if(!CATEGORIES.includes(name)) CATEGORIES.push(name);
+      if(!CATEGORIES.includes(name)){
+        CATEGORIES.push(name);
+        CATEGORIES.sort();
+        persist();
+      }
       categoryModalOpen = false;
       render();
       showToast('Categoría creada');
