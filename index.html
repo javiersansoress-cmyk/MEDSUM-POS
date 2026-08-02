@@ -192,6 +192,10 @@
     .btn-sm{padding:9px 12px;}
     input, select{font-size:16px;}
     [data-qty-plus],[data-qty-minus],[data-restock-qty-plus],[data-restock-qty-minus],[data-quote-qty-plus],[data-quote-qty-minus]{padding:6px;}
+
+    /* Vender / Resurtimiento / Cotizador: apilar en columna, con el carrito arriba del catálogo */
+    .shop-layout{flex-direction:column !important;}
+    .shop-layout > div[class*="card"]{position:static !important;top:auto !important;right:auto !important;order:-1;max-height:none !important;}
   }
 
   /* ===== FIDELIDAD DE CLIENTES (estilo app original) ===== */
@@ -941,7 +945,7 @@ function renderVender(){
   const cartCount = state.cart.reduce((s,i)=>s+i.qty,0);
 
   return `
-  <div style="display:flex;gap:20px;align-items:flex-start;">
+  <div class="shop-layout" style="display:flex;gap:20px;align-items:flex-start;">
     <div class="vender-products-col" style="flex:1;min-width:0;">
       <div style="display:flex;gap:10px;margin-bottom:14px;">
         <input id="vender-search" style="flex:1;" placeholder="Buscar productos" value="${escapeAttr(venderSearch)}"/>
@@ -2083,7 +2087,7 @@ function renderRestockScreen(){
     <span data-back-from-restock="1" style="cursor:pointer;font-size:20px;color:var(--text);">←</span>
     <h1 style="font-size:20px;margin:0;font-weight:700;">Generar Resurtimiento</h1>
   </div>
-  <div style="display:flex;gap:20px;align-items:flex-start;">
+  <div class="shop-layout" style="display:flex;gap:20px;align-items:flex-start;">
     <div style="flex:1;min-width:0;">
       <div style="margin-bottom:14px;">
         <input id="restock-search" placeholder="Buscar productos sin stock" style="width:100%;" value="${escapeAttr(restockSearch)}"/>
@@ -2911,7 +2915,7 @@ function renderQuoteEditor(){
     <span data-back-from-quote-editor="1" style="cursor:pointer;font-size:20px;color:var(--text);">←</span>
     <h1 style="font-size:20px;margin:0;font-weight:700;">${editingQuoteId?'Editar cotización':'Crear cotización'}</h1>
   </div>
-  <div style="display:flex;gap:20px;align-items:flex-start;">
+  <div class="shop-layout" style="display:flex;gap:20px;align-items:flex-start;">
     <div style="flex:1;min-width:0;">
       <div style="display:flex;gap:10px;margin-bottom:14px;">
         <input id="quote-edit-search" style="flex:1;" placeholder="Buscar productos" value="${escapeAttr(quoteEditSearch)}"/>
