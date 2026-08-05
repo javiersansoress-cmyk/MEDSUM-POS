@@ -1688,6 +1688,161 @@ function buildBalanceReportHTML(){
   </body></html>`;
 }
 
+function buildCategoryReportHTML(category){
+  const s = computeCategoryStats(category, estadisticasPeriod, todayISO());
+  const pLabel = periodLabel(estadisticasPeriod);
+  const wordPeriod = {Diario:'el día', Semanal:'la semana', Quincenal:'la quincena', Mensual:'el mes'}[estadisticasPeriod] || 'el periodo';
+  const logoTag = MEDSUM_LOGO_SRC ? `<img src="${MEDSUM_LOGO_SRC}"/>` : '';
+
+  let analysis = `Durante ${wordPeriod}, la categoría "${s.category}" generó ${money(s.ventasCategoria)} en ventas `+
+    `(${s.unidadesVendidas} unidad${s.unidadesVendidas===1?'':'es'} en ${s.numTransacciones} venta${s.numTransacciones===1?'':'s'}), `+
+    `con una ganancia de ${money(s.gananciaCategoria)} y un margen promedio de ${s.margenPct}%. `;
+  if(s.products.length){
+    const top = s.products[0];
+    analysis += `El producto que más se movió fue "${top.name}" con ${top.qty} unidad${top.qty===1?'':'es'} vendida${top.qty===1?'':'s'} `+
+      `(${money(top.revenue)} en ventas, margen de ${top.margenPct}%). `;
+    const lento = s.products.filter(p=>p.diasInventario!=null && p.diasInventario>60);
+    if(lento.length) analysis += `Los productos "${lento.map(p=>p.name).join('", "')}" tienen rotación lenta (más de 60 días de inventario al ritmo actual de venta), conviene no volver a surtirlos pronto o considerar una promoción. `;
+    const rapido = s.products.filter(p=>p.diasInventario!=null && p.diasInventario<=7);
+    if(rapido.length) analysis += `Los productos "${rapido.map(p=>p.name).join('", "')}" se están agotando rápido (7 días de inventario o menos al ritmo actual), conviene resurtirlos pronto. `;
+  } else {
+    analysis += `No se registraron ventas de esta categoría en ${wordPeriod}. `;
+  }
+  if(s.noMovimiento.length){
+    analysis += `Hay ${s.noMovimiento.length} producto${s.noMovimiento.length===1?'':'s'} de esta categoría sin ninguna venta en el periodo: ${s.noMovimiento.map(p=>p.name).join(', ')}.`;
+  }
+
+  const productRows = s.products.map(p=>`
+    <tr>
+      <td>${p.name}</td>
+      <td class="num">${p.qty}</td>
+      <td class="num">${money(p.revenue)}</td>
+      <td class="num">${money(p.revenue-p.cost)}</td>
+      <td class="num">${p.margenPct}%</td>
+      <td class="num">${p.stock}</td>
+      <td class="num">${p.diasInventario!=null?p.diasInventario+' días':'-'}</td>
+    </tr>`).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Reporte de categoría - ${s.category}</title><style>
+    ${formalDocStyles()}
+    .metrics{display:flex;gap:14px;margin:18px 0;flex-wrap:wrap;}
+    .metric{flex:1;min-width:130px;background:#F4F7F9;border-radius:10px;padding:14px;}
+    .metric .l{font-size:10px;color:#5D7E96;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;}
+    .metric .v{font-size:17px;font-weight:800;margin-top:4px;}
+    .metric.pos .v{color:#049184;} .metric.neg .v{color:#E5484D;}
+    .analysis-box{background:#F0F9F7;border:1px solid #B9E4DC;border-radius:10px;padding:14px 16px;font-size:12.5px;line-height:1.6;color:#16263A;margin:18px 0;}
+    h2.sec{font-size:13px;margin:22px 0 8px;color:#0B2A45;}
+  </style></head>
+  <body>
+    <div class="page">
+      ${formalLetterhead(logoTag)}
+      ${formalInfoRow([
+        ['REPORTE', 'Categoría: ' + s.category],
+        ['PERIODO', estadisticasPeriod],
+        ['GENERADO', formatDateDMY(todayISO())],
+      ])}
+
+      <div class="metrics">
+        <div class="metric pos"><div class="l">Ventas</div><div class="v">${money(s.ventasCategoria)}</div></div>
+        <div class="metric ${s.gananciaCategoria>=0?'pos':'neg'}"><div class="l">Ganancia</div><div class="v">${money(s.gananciaCategoria)}</div></div>
+        <div class="metric"><div class="l">Margen</div><div class="v">${s.margenPct}%</div></div>
+        <div class="metric"><div class="l">Unidades vendidas</div><div class="v">${s.unidadesVendidas}</div></div>
+        <div class="metric"><div class="l">Ticket promedio</div><div class="v">${money(s.ticketPromedio)}</div></div>
+      </div>
+
+      <h2 class="sec">Análisis de rotación</h2>
+      <div class="analysis-box">${analysis}</div>
+
+      ${s.products.length ? `
+      <h2 class="sec">Productos de la categoría (con ventas en el periodo)</h2>
+      <table class="items">
+        <thead><tr><th>Producto</th><th class="num">Unid.</th><th class="num">Ventas</th><th class="num">Ganancia</th><th class="num">Margen</th><th class="num">Stock</th><th class="num">Días inv.</th></tr></thead>
+        <tbody>${productRows}</tbody>
+      </table>` : ''}
+
+      <div class="notes">
+        "Días de inventario" estima cuántos días dura el stock actual de cada producto si se sigue vendiendo al mismo ritmo que en este periodo. Un número bajo sugiere resurtir pronto; un número alto sugiere rotación lenta.
+      </div>
+      <div class="footer-band">• • •   SALUD QUE TRANSFORMA   • • •</div>
+      <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
+    </div>
+  </body></html>`;
+}
+
+function buildInventoryReportHTML(){
+  const filtered = state.products.filter(p=>{
+    const matchesCat = inventoryCat==='Ver todos' ? true : (inventoryCat==='Sin stock' ? p.stock<=0 : p.category===inventoryCat);
+    const matchesSearch = p.name.toLowerCase().includes(inventorySearch.toLowerCase());
+    return matchesCat && matchesSearch;
+  }).sort((a,b)=>(b.cost*b.stock)-(a.cost*a.stock));
+
+  const totalSkus = filtered.length;
+  const totalUnidades = filtered.reduce((s,p)=>s+p.stock,0);
+  const costoTotal = filtered.reduce((s,p)=>s+p.cost*p.stock,0);
+  const valorVenta = filtered.reduce((s,p)=>s+p.price*p.stock,0);
+  const gananciaPotencial = valorVenta - costoTotal;
+  const sinStock = filtered.filter(p=>p.stock<=0).length;
+  const stockBajo = filtered.filter(p=>p.stock>0 && p.stock<=5).length;
+
+  const rows = filtered.map(p=>{
+    const margen = p.price>0 ? Math.round(((p.price-p.cost)/p.price)*1000)/10 : 0;
+    return `<tr>
+      <td>${p.name}</td>
+      <td>${p.category}</td>
+      <td class="num">${p.stock}</td>
+      <td class="num">${money(p.cost)}</td>
+      <td class="num">${money(p.price)}</td>
+      <td class="num">${margen}%</td>
+      <td class="num">${money(p.cost*p.stock)}</td>
+    </tr>`;
+  }).join('');
+
+  const filterDesc = (inventoryCat==='Ver todos' ? 'Todo el inventario' : inventoryCat) + (inventorySearch ? ` · Búsqueda: "${inventorySearch}"` : '');
+  const logoTag = MEDSUM_LOGO_SRC ? `<img src="${MEDSUM_LOGO_SRC}"/>` : '';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Reporte de Inventario MEDSUM</title><style>
+    ${formalDocStyles()}
+    .metrics{display:flex;gap:14px;margin:18px 0;flex-wrap:wrap;}
+    .metric{flex:1;min-width:130px;background:#F4F7F9;border-radius:10px;padding:14px;}
+    .metric .l{font-size:10px;color:#5D7E96;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;}
+    .metric .v{font-size:17px;font-weight:800;margin-top:4px;}
+    .metric.pos .v{color:#049184;} .metric.warn .v{color:#B7791F;} .metric.neg .v{color:#E5484D;}
+    h2.sec{font-size:13px;margin:22px 0 8px;color:#0B2A45;}
+  </style></head>
+  <body>
+    <div class="page">
+      ${formalLetterhead(logoTag)}
+      ${formalInfoRow([
+        ['REPORTE', 'Inventario'],
+        ['FILTRO', filterDesc],
+        ['GENERADO', formatDateDMY(todayISO())],
+      ])}
+
+      <div class="metrics">
+        <div class="metric"><div class="l">Referencias</div><div class="v">${totalSkus}</div></div>
+        <div class="metric"><div class="l">Unidades en stock</div><div class="v">${totalUnidades}</div></div>
+        <div class="metric"><div class="l">Costo total</div><div class="v">${money(costoTotal)}</div></div>
+        <div class="metric pos"><div class="l">Valor de venta</div><div class="v">${money(valorVenta)}</div></div>
+        <div class="metric pos"><div class="l">Ganancia potencial</div><div class="v">${money(gananciaPotencial)}</div></div>
+        <div class="metric ${sinStock>0?'neg':''}"><div class="l">Sin stock</div><div class="v">${sinStock}</div></div>
+        <div class="metric ${stockBajo>0?'warn':''}"><div class="l">Stock bajo (≤5)</div><div class="v">${stockBajo}</div></div>
+      </div>
+
+      <h2 class="sec">Detalle por producto (ordenado por capital invertido)</h2>
+      <table class="items">
+        <thead><tr><th>Producto</th><th>Categoría</th><th class="num">Stock</th><th class="num">Costo</th><th class="num">Precio</th><th class="num">Margen</th><th class="num">Valor en costo</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="notes">
+        El "valor en costo" es cuánto dinero tienes invertido en cada producto (costo unitario × stock actual). La "ganancia potencial" es la diferencia entre el valor de venta total y el costo total si se vendiera todo el inventario filtrado.
+      </div>
+      <div class="footer-band">• • •   SALUD QUE TRANSFORMA   • • •</div>
+      <div class="print-btn-wrap"><button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button></div>
+    </div>
+  </body></html>`;
+}
+
 function openFormalDocument(html){
   const blob = new Blob([html], {type:'text/html'});
   const url = URL.createObjectURL(blob);
@@ -2247,7 +2402,7 @@ function renderInventario(){
   return `
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
     <button class="btn btn-outline btn-sm" title="Registrar compra">${ICONS.box} Registrar compra</button>
-    <button class="btn btn-outline btn-sm" title="Descargar reporte">⬇ Descargar reporte</button>
+    <button class="btn btn-outline btn-sm" data-download-inventory-report="1">⬇ Descargar reporte</button>
     <button class="btn btn-outline btn-sm" data-open-category="1">${ICONS.plus} Categorías</button>
     <button class="btn btn-danger btn-sm" data-open-restock="1">🔄 Generar Resurtimiento${outOfStockCount?` (${outOfStockCount})`:''}</button>
     <button class="btn btn-primary btn-sm" data-open-product="1">${ICONS.plus} Crear productos</button>
@@ -2838,6 +2993,7 @@ function labelForKey(key, period){
 }
 
 let estadisticasPeriod = 'Mensual';
+let estadisticasCategory = '';
 
 function getPeriodKey(dateStr, period){
   const d = new Date(dateStr+'T00:00:00');
@@ -2856,6 +3012,59 @@ function periodLabel(period){
   return {Diario:'día', Semanal:'semana', Quincenal:'quincena', Mensual:'mes'}[period] || 'periodo';
 }
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function periodDaysApprox(period){
+  return {Diario:1, Semanal:7, Quincenal:15, Mensual:30}[period] || 30;
+}
+
+function computeCategoryStats(category, period, refDateISO){
+  const refKey = getPeriodKey(refDateISO, period);
+  const salesInRange = state.sales.filter(s=>getPeriodKey(s.date, period)===refKey);
+
+  const productMap = {};
+  let ventasCategoria = 0, costoCategoria = 0, unidadesVendidas = 0, numTransacciones = 0;
+
+  salesInRange.forEach(sale=>{
+    let saleTouchesCategory = false;
+    sale.items.forEach(it=>{
+      const p = state.products.find(x=>x.id===it.productId);
+      if(!p || p.category!==category) return;
+      saleTouchesCategory = true;
+      const cost = p.cost||0;
+      const revenue = it.price*it.qty;
+      const costTotal = cost*it.qty;
+      ventasCategoria += revenue;
+      costoCategoria += costTotal;
+      unidadesVendidas += it.qty;
+      if(!productMap[it.productId]) productMap[it.productId] = {name:it.name, qty:0, revenue:0, cost:0, stock:p.stock, price:p.price};
+      productMap[it.productId].qty += it.qty;
+      productMap[it.productId].revenue += revenue;
+      productMap[it.productId].cost += costTotal;
+    });
+    if(saleTouchesCategory) numTransacciones++;
+  });
+
+  const gananciaCategoria = ventasCategoria - costoCategoria;
+  const margenPct = ventasCategoria>0 ? Math.round((gananciaCategoria/ventasCategoria)*1000)/10 : 0;
+  const ticketPromedio = numTransacciones>0 ? ventasCategoria/numTransacciones : 0;
+  const days = periodDaysApprox(period);
+
+  const products = Object.values(productMap).map(p=>({
+    ...p,
+    margenPct: p.revenue>0 ? Math.round(((p.revenue-p.cost)/p.revenue)*1000)/10 : 0,
+    velocidadDiaria: p.qty/days,
+    diasInventario: p.qty>0 ? Math.round((p.stock / (p.qty/days))*10)/10 : null,
+  })).sort((a,b)=>b.revenue-a.revenue);
+
+  // Productos de la categoría que no tuvieron ninguna venta en el periodo (para detectar rotación lenta)
+  const soldIds = new Set(Object.keys(productMap));
+  const noMovimiento = state.products.filter(p=>p.category===category && !soldIds.has(p.id));
+
+  return {
+    category, ventasCategoria, costoCategoria, gananciaCategoria, margenPct,
+    unidadesVendidas, numTransacciones, ticketPromedio, products, noMovimiento, days
+  };
+}
 
 function renderEstadisticas(){
   const today = new Date();
@@ -2973,7 +3182,59 @@ function renderEstadisticas(){
         `).join('') : `<tr><td colspan="3"><div class="empty-state">${ICONS.box}<b>Aún no hay productos vendidos</b></div></td></tr>`}
       </tbody>
     </table>
+  </div>
+  <div class="card" style="padding:20px;margin-top:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+      <b style="font-size:14px;">Análisis por categoría</b>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="estadisticas-category" style="min-width:180px;">
+          <option value="">Selecciona una categoría</option>
+          ${CATEGORIES.map(c=>`<option value="${c}" ${estadisticasCategory===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+        ${estadisticasCategory ? `<button class="btn btn-outline btn-sm" data-download-category-report="1">⬇ Descargar reporte</button>` : ''}
+      </div>
+    </div>
+    ${estadisticasCategory ? CategoryStatsBlock(computeCategoryStats(estadisticasCategory, estadisticasPeriod, todayISO())) : `
+      <div style="font-size:12.5px;color:var(--text-muted);padding:14px 0 4px;">Elige una categoría (por ejemplo, "Abarrotes") para ver ventas, ganancia, margen y rotación solo de esos productos.</div>
+    `}
   </div>`;
+}
+
+function CategoryStatsBlock(s){
+  const pLabel = periodLabel(estadisticasPeriod);
+  return `
+    <div style="font-size:12px;color:var(--text-muted);margin:10px 0 14px;">Categoría: <b style="color:var(--text);">${s.category}</b> · ${pLabel[0].toUpperCase()+pLabel.slice(1)} actual</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+      <div class="card" style="flex:1;min-width:150px;padding:14px;"><div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Ventas</div><div style="font-size:18px;font-weight:800;margin-top:4px;">${money(s.ventasCategoria)}</div></div>
+      <div class="card" style="flex:1;min-width:150px;padding:14px;"><div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Ganancia</div><div style="font-size:18px;font-weight:800;margin-top:4px;color:${s.gananciaCategoria>=0?'var(--success)':'var(--danger)'};">${money(s.gananciaCategoria)}</div></div>
+      <div class="card" style="flex:1;min-width:150px;padding:14px;"><div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Margen</div><div style="font-size:18px;font-weight:800;margin-top:4px;">${s.margenPct}%</div></div>
+      <div class="card" style="flex:1;min-width:150px;padding:14px;"><div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Unidades vendidas</div><div style="font-size:18px;font-weight:800;margin-top:4px;">${s.unidadesVendidas}</div></div>
+      <div class="card" style="flex:1;min-width:150px;padding:14px;"><div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Ticket promedio</div><div style="font-size:18px;font-weight:800;margin-top:4px;">${money(s.ticketPromedio)}</div></div>
+    </div>
+    ${s.products.length ? `
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Producto</th><th>Unidades</th><th>Ventas</th><th>Ganancia</th><th>Margen</th><th>Stock actual</th><th>Días de inventario</th></tr></thead>
+        <tbody>
+          ${s.products.map(p=>`
+            <tr>
+              <td style="font-weight:600;">${p.name}</td>
+              <td>${p.qty}</td>
+              <td>${money(p.revenue)}</td>
+              <td style="color:${(p.revenue-p.cost)>=0?'var(--success)':'var(--danger)'};">${money(p.revenue-p.cost)}</td>
+              <td><span class="badge badge-success">${p.margenPct}%</span></td>
+              <td>${p.stock}</td>
+              <td>${p.diasInventario!=null ? (p.diasInventario<=7 ? `<span class="badge badge-warn">${p.diasInventario} días</span>` : p.diasInventario+' días') : '-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : `<div class="empty-state">${ICONS.box}<b>Sin ventas de esta categoría en el periodo</b></div>`}
+    ${s.noMovimiento.length ? `
+      <div style="margin-top:16px;padding:12px 14px;background:#FFF3DC;border-radius:10px;">
+        <b style="font-size:12.5px;color:#B7791F;">⚠️ Sin movimiento en el periodo (${s.noMovimiento.length}):</b>
+        <div style="font-size:12px;color:#8A5A15;margin-top:4px;">${s.noMovimiento.map(p=>p.name+' ('+p.stock+' en stock)').join(', ')}</div>
+      </div>` : ''}
+  `;
 }
 
 /* ========= VISTA: COTIZACIONES ========= */
@@ -4266,6 +4527,16 @@ function attachHandlers(){
   if(estadisticasPeriodEl){
     estadisticasPeriodEl.addEventListener('change', (e)=>{ estadisticasPeriod = e.target.value; render(); });
   }
+  const estadisticasCategoryEl = document.getElementById('estadisticas-category');
+  if(estadisticasCategoryEl){
+    estadisticasCategoryEl.addEventListener('change', (e)=>{ estadisticasCategory = e.target.value; render(); });
+  }
+  const downloadCategoryReportEl = document.querySelector('[data-download-category-report]');
+  if(downloadCategoryReportEl){
+    downloadCategoryReportEl.addEventListener('click', ()=>{
+      openFormalDocument(buildCategoryReportHTML(estadisticasCategory));
+    });
+  }
 
   // ----- COTIZACIONES -----
   const applyQuoteFilterBtn = document.querySelector('[data-apply-quote-filter]');
@@ -4564,6 +4835,12 @@ function attachHandlers(){
   }
   const openCategoryBtn = document.querySelector('[data-open-category]');
   if(openCategoryBtn){ openCategoryBtn.addEventListener('click', ()=>{ categoryModalOpen = true; render(); }); }
+  const downloadInventoryReportEl = document.querySelector('[data-download-inventory-report]');
+  if(downloadInventoryReportEl){
+    downloadInventoryReportEl.addEventListener('click', ()=>{
+      openFormalDocument(buildInventoryReportHTML());
+    });
+  }
 
   // ----- RESURTIMIENTO -----
   const openRestockBtn = document.querySelector('[data-open-restock]');
