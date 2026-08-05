@@ -548,6 +548,31 @@ const REAL_PRODUCTS = [
 
 // CATEGORIES ahora se toma de state.categories (ver más abajo, tras cargar el estado guardado)
 
+const CORE_CATEGORIES = ['Farmacia','Quirúrgico','Conveniencia','Insumos'];
+const CATEGORY_MIGRATION_VERSION = 1;
+const CATEGORY_MIGRATION_MAP = {
+  'Farmacia': 'Farmacia',
+  'QUIRÚRGICO': 'Quirúrgico',
+  'Anestesia': 'Quirúrgico',
+  'ENFERMERÍA': 'Insumos',
+  'CURACIÓN': 'Insumos',
+  'DIAGNOSTICO': 'Insumos',
+  'DESINFECTANTE': 'Insumos',
+  'Pruebas': 'Insumos',
+  'BARIATRICO': 'Insumos',
+  'REHABILITACION': 'Insumos',
+  'Ortopedia': 'Insumos',
+  'HIGIENE': 'Conveniencia',
+  'ELECTRONICA': 'Conveniencia',
+  'kali': 'Conveniencia',
+  'Envios': 'Conveniencia',
+  'Sin categoría': 'Insumos',
+  '': 'Insumos',
+};
+function remapToCoreCategory(oldCategory){
+  return CATEGORY_MIGRATION_MAP[oldCategory] || 'Insumos';
+}
+
 function normalizeQuote(q){
   return Object.assign({
     items:[], clientId:null, clientPhone:'', createdAt:Date.now(), expiresAt:Date.now()+7*86400000, employeeName:'Propietario'
@@ -562,9 +587,10 @@ function normalizeClient(c){
 
 function seedState(){
   return {
-    products: REAL_PRODUCTS.map(p=>({...p})),
+    products: REAL_PRODUCTS.map(p=>({...p, category: remapToCoreCategory(p.category)})),
     productDataVersion: PRODUCT_DATA_VERSION,
-    categories: [...new Set(REAL_PRODUCTS.map(p=>p.category))].sort(),
+    categories: CORE_CATEGORIES.slice(),
+    categoryMigrationVersion: CATEGORY_MIGRATION_VERSION,
     clients: REAL_CLIENTS.map(normalizeClient),
     loyaltySettings: Object.assign({}, REAL_LOYALTY_SETTINGS),
     clientDataVersion: CLIENT_DATA_VERSION,
@@ -576,32 +602,42 @@ function seedState(){
   };
 }
 
+function applyMigrations(parsed){
+  if(parsed.clientDataVersion !== CLIENT_DATA_VERSION){
+    // Cargar/actualizar a la base de datos real de clientes, conservando ventas/inventario existentes
+    parsed.clients = REAL_CLIENTS.map(normalizeClient);
+    parsed.loyaltySettings = Object.assign({}, REAL_LOYALTY_SETTINGS);
+    parsed.clientDataVersion = CLIENT_DATA_VERSION;
+  } else {
+    parsed.clients = (parsed.clients||[]).map(normalizeClient);
+  }
+  if(!parsed.loyaltySettings){
+    parsed.loyaltySettings = Object.assign({}, REAL_LOYALTY_SETTINGS);
+  }
+  if(parsed.productDataVersion !== PRODUCT_DATA_VERSION){
+    // Cargar/actualizar al inventario real, conservando ventas y clientes existentes
+    parsed.products = REAL_PRODUCTS.map(p=>({...p}));
+    parsed.productDataVersion = PRODUCT_DATA_VERSION;
+  }
+  parsed.quotes = (parsed.quotes||[]).map(normalizeQuote);
+  if(!parsed.categories || !parsed.categories.length){
+    parsed.categories = [...new Set((parsed.products||[]).map(p=>p.category))].sort();
+  }
+  if(parsed.categoryMigrationVersion !== CATEGORY_MIGRATION_VERSION){
+    // Depurar el catálogo a las 4 categorías núcleo, conservando cada producto tal cual
+    // (precio, costo, stock, imagen, etc.) — solo se remapea el campo "category".
+    (parsed.products||[]).forEach(p=>{ p.category = remapToCoreCategory(p.category); });
+    parsed.categories = CORE_CATEGORIES.slice();
+    parsed.categoryMigrationVersion = CATEGORY_MIGRATION_VERSION;
+  }
+  return parsed;
+}
+
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
-      const parsed = JSON.parse(raw);
-      if(parsed.clientDataVersion !== CLIENT_DATA_VERSION){
-        // Cargar/actualizar a la base de datos real de clientes, conservando ventas/inventario existentes
-        parsed.clients = REAL_CLIENTS.map(normalizeClient);
-        parsed.loyaltySettings = Object.assign({}, REAL_LOYALTY_SETTINGS);
-        parsed.clientDataVersion = CLIENT_DATA_VERSION;
-      } else {
-        parsed.clients = (parsed.clients||[]).map(normalizeClient);
-      }
-      if(!parsed.loyaltySettings){
-        parsed.loyaltySettings = Object.assign({}, REAL_LOYALTY_SETTINGS);
-      }
-      if(parsed.productDataVersion !== PRODUCT_DATA_VERSION){
-        // Cargar/actualizar al inventario real, conservando ventas y clientes existentes
-        parsed.products = REAL_PRODUCTS.map(p=>({...p}));
-        parsed.productDataVersion = PRODUCT_DATA_VERSION;
-      }
-      parsed.quotes = (parsed.quotes||[]).map(normalizeQuote);
-      if(!parsed.categories || !parsed.categories.length){
-        parsed.categories = [...new Set((parsed.products||[]).map(p=>p.category))].sort();
-      }
-      return parsed;
+      return applyMigrations(JSON.parse(raw));
     }
   }catch(e){}
   return seedState();
@@ -664,8 +700,11 @@ async function syncFromGoogleSheets(){
     const res = await fetch(APPS_SCRIPT_URL);
     const text = await res.text();
     if(text && text !== '{}'){
-      state = JSON.parse(text);
+      state = applyMigrations(JSON.parse(text));
+      CATEGORIES.length = 0;
+      CATEGORIES.push(...state.categories);
       render();
+      persist();
       setSyncIndicator('saved');
     } else {
       gsSaveState().then(()=>setSyncIndicator('saved')).catch(()=>setSyncIndicator('error'));
@@ -2437,6 +2476,9 @@ function renderInventario(){
               <button class="btn btn-outline btn-sm" data-edit-full-product="${p.id}">✏️ Editar</button>
               <button class="btn btn-danger btn-sm" data-quick-delete-product="${p.id}" title="Eliminar sin confirmar">🗑</button>
               <button class="btn btn-sm" data-toggle-catalog-quick="${p.id}" title="${p.catalog!==false?'Quitar del catálogo virtual':'Mostrar en catálogo virtual'}" style="background:${p.catalog!==false?'var(--turquoise-light)':'#EEF1F5'};color:${p.catalog!==false?'var(--turquoise-dark)':'var(--text-muted)'};">${p.catalog!==false?'🌐 En catálogo':'🚫 Oculto'}</button>
+              <select data-quick-category="${p.id}" class="btn-sm" style="border:1px solid var(--border);border-radius:10px;padding:7px 8px;font-size:12.5px;font-weight:600;background:#fff;">
+                ${CATEGORIES.map(c=>`<option value="${escapeAttr(c)}" ${p.category===c?'selected':''}>${c}</option>`).join('')}
+              </select>
             </td>
           </tr>`;
         }).join('') : `<tr><td colspan="8"><div class="empty-state">${ICONS.box}<b>No hay productos</b></div></td></tr>`}
@@ -4786,6 +4828,16 @@ function attachHandlers(){
       p.catalog = p.catalog===false ? true : false;
       persist(); render();
       showToast(p.catalog!==false ? 'Producto visible en catálogo' : 'Producto oculto del catálogo');
+    });
+  });
+  document.querySelectorAll('[data-quick-category]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const id = el.getAttribute('data-quick-category');
+      const p = state.products.find(x=>x.id===id);
+      if(!p) return;
+      p.category = el.value;
+      persist(); render();
+      showToast('Categoría actualizada');
     });
   });
   const toggleCatalogEl = document.querySelector('[data-toggle-catalog]');
