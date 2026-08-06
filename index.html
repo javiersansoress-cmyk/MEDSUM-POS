@@ -587,7 +587,7 @@ function normalizeClient(c){
 
 function seedState(){
   return {
-    products: REAL_PRODUCTS.map(p=>({...p, category: remapToCoreCategory(p.category)})),
+    products: REAL_PRODUCTS.map(p=>({...p, category: remapToCoreCategory(p.category), tax: p.tax || 'IVA 16%'})),
     productDataVersion: PRODUCT_DATA_VERSION,
     categories: CORE_CATEGORIES.slice(),
     categoryMigrationVersion: CATEGORY_MIGRATION_VERSION,
@@ -630,6 +630,9 @@ function applyMigrations(parsed){
     parsed.categories = CORE_CATEGORIES.slice();
     parsed.categoryMigrationVersion = CATEGORY_MIGRATION_VERSION;
   }
+  // Los productos sin impuesto asignado quedan en IVA 16% por default; solo se
+  // completa lo que falta, nunca se pisa un valor que ya hayas puesto (0% o Exento).
+  (parsed.products||[]).forEach(p=>{ if(!p.tax) p.tax = 'IVA 16%'; });
   return parsed;
 }
 
@@ -2635,7 +2638,7 @@ function ProductModal(){
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div class="field">
               <label>Foto del producto</label>
-              <div style="display:flex;align-items:center;gap:12px;">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
                 <div id="product-image-preview" style="width:64px;height:64px;border-radius:10px;background:var(--turquoise-light);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;color:var(--turquoise-dark);">
                   ${productImageData ? `<img src="${productImageData}" style="width:100%;height:100%;object-fit:cover;"/>` : ICONS.box}
                 </div>
@@ -2646,6 +2649,14 @@ function ProductModal(){
                   </label>
                   ${productImageData ? `<span data-remove-product-image="1" style="font-size:11.5px;color:var(--danger);cursor:pointer;">Quitar imagen</span>` : `<span style="font-size:11px;color:var(--text-muted);">PNG o JPG, ideal 500x500px</span>`}
                 </div>
+              </div>
+              <div style="background:var(--bg);border-radius:10px;padding:10px 12px;">
+                <button type="button" class="btn btn-outline btn-sm" data-search-product-image="1" style="width:100%;justify-content:center;margin-bottom:8px;">🔍 Buscar imagen en Google</button>
+                <div style="display:flex;gap:6px;">
+                  <input id="product-image-url" placeholder="Pega aquí la URL de la imagen elegida" style="flex:1;"/>
+                  <button type="button" class="btn btn-primary btn-sm" data-use-image-url="1">Usar</button>
+                </div>
+                <div style="font-size:10.5px;color:var(--text-muted);margin-top:6px;">Se abre Google Imágenes en otra pestaña con el nombre del producto. Da clic derecho sobre la foto que sí sea correcta → "Copiar dirección de la imagen" → pégala aquí. Repite si la primera no era la correcta.</div>
               </div>
             </div>
             <div class="field">
@@ -4792,9 +4803,9 @@ function attachHandlers(){
 
   // ----- INVENTARIO: producto y categoría -----
   const openProductBtn = document.querySelector('[data-open-product]');
-  if(openProductBtn){ openProductBtn.addEventListener('click', ()=>{ productPrefillName=''; productCatalog=true; productImageData=null; editingProductId=null; productEditPrefill={}; productModalOpen = true; render(); }); }
+  if(openProductBtn){ openProductBtn.addEventListener('click', ()=>{ productPrefillName=''; productCatalog=true; productImageData=null; editingProductId=null; productEditPrefill={tax:'IVA 16%'}; productModalOpen = true; render(); }); }
   const openProductFromSearchBtn = document.querySelector('[data-open-product-from-search]');
-  if(openProductFromSearchBtn){ openProductFromSearchBtn.addEventListener('click', ()=>{ productPrefillName = venderSearch; productCatalog=true; productImageData=null; editingProductId=null; productEditPrefill={}; productModalOpen = true; render(); }); }
+  if(openProductFromSearchBtn){ openProductFromSearchBtn.addEventListener('click', ()=>{ productPrefillName = venderSearch; productCatalog=true; productImageData=null; editingProductId=null; productEditPrefill={tax:'IVA 16%'}; productModalOpen = true; render(); }); }
   document.querySelectorAll('[data-edit-full-product]').forEach(editFullProductBtn=>{
     editFullProductBtn.addEventListener('click', ()=>{
       const id = editFullProductBtn.getAttribute('data-edit-full-product');
@@ -4855,6 +4866,24 @@ function attachHandlers(){
   }
   const removeProductImageEl = document.querySelector('[data-remove-product-image]');
   if(removeProductImageEl){ removeProductImageEl.addEventListener('click', ()=>{ productImageData = null; render(); }); }
+  const searchProductImageEl = document.querySelector('[data-search-product-image]');
+  if(searchProductImageEl){
+    searchProductImageEl.addEventListener('click', ()=>{
+      const nameEl = document.getElementById('product-name');
+      const query = (nameEl && nameEl.value.trim()) || productPrefillName || 'producto médico';
+      window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(query), '_blank', 'noopener');
+    });
+  }
+  const useImageUrlEl = document.querySelector('[data-use-image-url]');
+  if(useImageUrlEl){
+    useImageUrlEl.addEventListener('click', ()=>{
+      const urlEl = document.getElementById('product-image-url');
+      const url = urlEl ? urlEl.value.trim() : '';
+      if(!url){ showToast('Pega primero la URL de la imagen'); return; }
+      productImageData = url;
+      render();
+    });
+  }
   const saveProductBtn = document.querySelector('[data-save-product]');
   if(saveProductBtn){
     saveProductBtn.addEventListener('click', ()=>{
