@@ -654,7 +654,7 @@ const CATEGORIES = state.categories;
    como Aplicación web (termina en /exec). Apps Script aquí SOLO responde
    datos (Google Sheets), nunca sirve esta página — este archivo vive en
    GitHub Pages (o donde tú decidas) y le pide/manda datos a esa URL. */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyd45Ka8ZNEbmRc6D_pF-Jl0OyxB9qNsGfQIpoBgqv3R3j6MiQmcHzkyc1FI3QpVvGn/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPc68FOw9PB_nUT5MkmpOIs3uVXyVXgNg2BOHRYoAnPF7pXeXb2qb_QOkwYR4TZMP7/exec';
 
 function setSyncIndicator(status){
   const el = document.getElementById('sync-indicator');
@@ -719,6 +719,9 @@ async function syncFromGoogleSheets(){
       serverState.expenses = mergeArraysById(localState.expenses, serverState.expenses);
       serverState.quotes = mergeArraysById(localState.quotes, serverState.quotes);
       serverState.clients = mergeArraysById(localState.clients, serverState.clients);
+      // El carrito es exclusivo de este dispositivo/pestaña: nunca se adopta el
+      // del servidor, para que una venta ya cobrada no "reaparezca" en la canasta.
+      serverState.cart = localState.cart || [];
       state = serverState;
       CATEGORIES.length = 0;
       CATEGORIES.push(...state.categories);
