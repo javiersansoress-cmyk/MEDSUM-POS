@@ -696,6 +696,16 @@ function persist(){
   }, 400);
 }
 
+function mergeArraysById(localArr, serverArr){
+  const map = new Map();
+  (serverArr||[]).forEach(item=>{ if(item && item.id) map.set(item.id, item); });
+  // Lo local siempre gana si el mismo id existe en ambos lados, y se agrega
+  // cualquier registro local que el servidor aún no tenga (p. ej. una venta
+  // que se guardó localmente pero no alcanzó a subirse antes del refresh).
+  (localArr||[]).forEach(item=>{ if(item && item.id) map.set(item.id, item); });
+  return Array.from(map.values());
+}
+
 async function syncFromGoogleSheets(){
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PEGA_AQUI') !== -1) return;
   setSyncIndicator('loading');
@@ -703,7 +713,13 @@ async function syncFromGoogleSheets(){
     const res = await fetch(APPS_SCRIPT_URL);
     const text = await res.text();
     if(text && text !== '{}'){
-      state = applyMigrations(JSON.parse(text));
+      const localState = state;
+      const serverState = applyMigrations(JSON.parse(text));
+      serverState.sales = mergeArraysById(localState.sales, serverState.sales);
+      serverState.expenses = mergeArraysById(localState.expenses, serverState.expenses);
+      serverState.quotes = mergeArraysById(localState.quotes, serverState.quotes);
+      serverState.clients = mergeArraysById(localState.clients, serverState.clients);
+      state = serverState;
       CATEGORIES.length = 0;
       CATEGORIES.push(...state.categories);
       render();
