@@ -599,6 +599,7 @@ function seedState(){
     quotes: [],
     cart: [],
     selectedClientId: null,
+    deletedProductIds: [],
   };
 }
 
@@ -633,6 +634,9 @@ function applyMigrations(parsed){
   // Los productos sin impuesto asignado quedan en IVA 16% por default; solo se
   // completa lo que falta, nunca se pisa un valor que ya hayas puesto (0% o Exento).
   (parsed.products||[]).forEach(p=>{ if(!p.tax) p.tax = 'IVA 16%'; });
+  parsed.deletedProductIds = parsed.deletedProductIds || [];
+  // Nunca dejar "revivir" un producto que se eliminó a propósito
+  parsed.products = (parsed.products||[]).filter(p=>!parsed.deletedProductIds.includes(p.id));
   return parsed;
 }
 
@@ -719,6 +723,11 @@ async function syncFromGoogleSheets(){
       serverState.expenses = mergeArraysById(localState.expenses, serverState.expenses);
       serverState.quotes = mergeArraysById(localState.quotes, serverState.quotes);
       serverState.clients = mergeArraysById(localState.clients, serverState.clients);
+      // Combinar qué productos se han eliminado a propósito (en cualquier dispositivo)
+      // y quitarlos, para que ningún dispositivo con una copia vieja los "reviva".
+      const deletedSet = new Set([...(localState.deletedProductIds||[]), ...(serverState.deletedProductIds||[])]);
+      serverState.deletedProductIds = Array.from(deletedSet);
+      serverState.products = (serverState.products||[]).filter(p=>!deletedSet.has(p.id));
       // El carrito es exclusivo de este dispositivo/pestaña: nunca se adopta el
       // del servidor, para que una venta ya cobrada no "reaparezca" en la canasta.
       serverState.cart = localState.cart || [];
@@ -4846,6 +4855,8 @@ function attachHandlers(){
     el.addEventListener('click', ()=>{
       const id = el.getAttribute('data-quick-delete-product');
       state.products = state.products.filter(p=>p.id!==id);
+      state.deletedProductIds = state.deletedProductIds || [];
+      if(!state.deletedProductIds.includes(id)) state.deletedProductIds.push(id);
       persist(); render();
       showToast('Producto eliminado');
     });
@@ -4949,6 +4960,8 @@ function attachHandlers(){
     confirmDeleteProductBtn.addEventListener('click', ()=>{
       const id = confirmDeleteProductBtn.getAttribute('data-confirm-delete-product');
       state.products = state.products.filter(p=>p.id!==id);
+      state.deletedProductIds = state.deletedProductIds || [];
+      if(!state.deletedProductIds.includes(id)) state.deletedProductIds.push(id);
       confirmDeleteProductId = null;
       editingProductId = null;
       persist(); render();
