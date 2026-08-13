@@ -2474,6 +2474,7 @@ function renderInventario(){
     <button class="btn btn-outline btn-sm" title="Registrar compra">${ICONS.box} Registrar compra</button>
     <button class="btn btn-outline btn-sm" data-download-inventory-report="1">⬇ Descargar reporte</button>
     <button class="btn btn-outline btn-sm" data-open-category="1">${ICONS.plus} Categorías</button>
+    <button class="btn btn-outline btn-sm" data-hide-all-catalog="1">🚫 Ocultar todo del catálogo online</button>
     <button class="btn btn-danger btn-sm" data-open-restock="1">🔄 Generar Resurtimiento${outOfStockCount?` (${outOfStockCount})`:''}</button>
     <button class="btn btn-primary btn-sm" data-open-product="1">${ICONS.plus} Crear productos</button>
   </div>
@@ -4970,6 +4971,16 @@ function attachHandlers(){
   }
   const openCategoryBtn = document.querySelector('[data-open-category]');
   if(openCategoryBtn){ openCategoryBtn.addEventListener('click', ()=>{ categoryModalOpen = true; render(); }); }
+  const hideAllCatalogBtn = document.querySelector('[data-hide-all-catalog]');
+  if(hideAllCatalogBtn){
+    hideAllCatalogBtn.addEventListener('click', ()=>{
+      const ok = confirm(`Esto va a ocultar los ${state.products.length} productos de tu inventario del catálogo online. ¿Continuar?`);
+      if(!ok) return;
+      state.products.forEach(p=>{ p.catalog = false; });
+      persist(); render();
+      showToast('Todo el inventario quedó oculto del catálogo online');
+    });
+  }
   const downloadInventoryReportEl = document.querySelector('[data-download-inventory-report]');
   if(downloadInventoryReportEl){
     downloadInventoryReportEl.addEventListener('click', ()=>{
